@@ -342,11 +342,11 @@ uint256 owed = balance × (cumulativeRevenuePerToken - lastClaimPerToken[holder]
 
 **Example:**
 ```
-Alice has 1,000 tokens
-Last claim checkpoint: 0.00005 ETH per token
-Current cumulative: 0.00015 ETH per token
+Alice has 10,000 tokens
+Last claim checkpoint: 0.000005 ETH per token
+Current cumulative: 0.000015 ETH per token
 
-Owed = 1,000 × (0.00015 - 0.00005) = 1,000 × 0.0001 = 0.1 ETH
+Owed = 10,000 × (0.000015 - 0.000005) = 10,000 × 0.00001 = 0.1 ETH
 ```
 
 ---
@@ -358,8 +358,12 @@ Owed = 1,000 × (0.00015 - 0.00005) = 1,000 × 0.0001 = 0.1 ETH
 **Key Functions:**
 ```solidity
 function distributeRevenue() external payable
-function getDistributionHistory() external view returns (Distribution[] memory)
+function routeRevenue() external  // Anyone can trigger routing
+function getRouterStatus() external view returns (...)  // Check router state
 ```
+
+**Distribution History:**
+Distribution history is typically reconstructed off-chain by indexing `RevenueReceived` and `RevenueRouted` events (recommended approach).
 
 **How Distribution Works:**
 ```solidity

@@ -119,6 +119,50 @@ Revenue Bonds Protocol solves these problems by bringing revenue sharing on-chai
 
 ## How It Works
 
+### Protocol Flow Diagram
+
+High-level flow of contracts and funds:
+
+```mermaid
+flowchart LR
+  P[Protocol / Issuer<br/>msg.sender] -->|createSeries(...)| F[RevenueSeriesFactory]
+  F -->|deploy| S[RevenueSeries ERC-20<br/>holds funds + accounting]
+  F -->|deploy| R[RevenueRouter<br/>forwards revenue]
+
+  P -->|distributeRevenue value: ETH| R -->|forward ETH| S
+
+  H[Holders<br/>wallets] -->|claimRevenue| S -->|payout ETH| H
+```
+
+---
+
+### Revenue Accounting Flow
+
+How the pull-based claim model works:
+
+```mermaid
+sequenceDiagram
+  participant Issuer as Protocol/Issuer
+  participant Router as RevenueRouter
+  participant Series as RevenueSeries
+  participant Alice as Holder (Alice)
+
+  Issuer->>Router: distributeRevenue(value=5 ETH)
+  Router->>Series: distributeRevenue(value=5 ETH)
+  Series->>Series: cumulativeRevenuePerToken += (msg.value / totalSupply)
+  Series-->>Router: emit RevenueDistributed
+
+  Alice->>Series: getClaimableRevenue(Alice)
+  Series-->>Alice: balance * (cumulative - lastClaimPerToken[Alice])
+
+  Alice->>Series: claimRevenue()
+  Series->>Alice: transfer owed ETH
+  Series->>Series: lastClaimPerToken[Alice] = cumulative
+  Series-->>Alice: emit RevenueClaimed
+```
+
+---
+
 Let's break down the entire process step by step:
 
 ### Step 1: Create a Revenue Bond Series

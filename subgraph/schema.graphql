@@ -1,0 +1,333 @@
+# ============================================
+# EQUORUM PROTOCOL V2 - THEGRAPH SCHEMA
+# ============================================
+# Este schema define todas as entidades indexadas
+# para alimentar o Dashboard público e o App
+
+# ============================================
+# GLOBAL PROTOCOL STATS
+# ============================================
+type ProtocolStats @entity {
+  id: ID! # Sempre "protocol-stats"
+  totalRevenueBondsCreated: BigInt!
+  totalCapitalRaised: BigDecimal! # Em ETH
+  totalRevenueDistributed: BigDecimal! # Em ETH
+  totalActiveSeries: BigInt!
+  totalMaturedSeries: BigInt!
+  totalDefaultedSeries: BigInt!
+  totalProtocolsFunded: BigInt!
+  averageDeliveryRate: BigDecimal! # % média de entrega (receita real / esperada)
+  lastUpdatedTimestamp: BigInt!
+  lastUpdatedBlock: BigInt!
+}
+
+# ============================================
+# REVENUE SERIES (SOFT BONDS)
+# ============================================
+type RevenueSeries @entity {
+  id: ID! # Address do contrato
+  name: String!
+  symbol: String!
+  bondType: BondType! # SOFT ou HYBRID
+  
+  # Protocol Info
+  protocol: Protocol!
+  protocolAddress: Bytes!
+  
+  # Router
+  router: RevenueRouter!
+  routerAddress: Bytes!
+  
+  # Configuration
+  revenueShareBPS: BigInt! # 2000 = 20%
+  revenueSharePercentage: BigDecimal! # 20.0
+  durationDays: BigInt!
+  totalSupply: BigDecimal!
+  minDistributionAmount: BigDecimal!
+  
+  # Dates
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  maturityDate: BigInt!
+  
+  # Status
+  state: SeriesState! # Active, Matured, etc
+  isActive: Boolean!
+  
+  # Financial Metrics
+  totalRevenueReceived: BigDecimal!
+  totalRevenueDistributed: BigDecimal!
+  totalRevenueClaimed: BigDecimal!
+  revenuePerTokenStored: BigDecimal!
+  
+  # Distribution Stats
+  distributionCount: BigInt!
+  lastDistributionTimestamp: BigInt!
+  averageDistributionAmount: BigDecimal!
+  
+  # Holder Stats
+  holderCount: BigInt!
+  claimCount: BigInt!
+  
+  # APY Calculation (calculado off-chain ou via helper)
+  estimatedAPY: BigDecimal
+  
+  # Relationships
+  distributions: [RevenueDistribution!]! @derivedFrom(field: "series")
+  claims: [RevenueClaim!]! @derivedFrom(field: "series")
+  holders: [SeriesHolder!]! @derivedFrom(field: "series")
+  
+  # Hybrid Bond specific (null se for Soft Bond)
+  escrow: RevenueBondEscrow
+}
+
+# ============================================
+# REVENUE BOND ESCROW (HYBRID BONDS)
+# ============================================
+type RevenueBondEscrow @entity {
+  id: ID! # Address do contrato
+  series: RevenueSeries! # One-to-one com RevenueSeries
+  
+  # Principal Configuration
+  principalAmount: BigDecimal!
+  minPurchaseAmount: BigDecimal!
+  depositDeadlineDays: BigInt!
+  depositDeadline: BigInt!
+  
+  # State
+  state: EscrowState! # PendingPrincipal, Active, Matured, Defaulted
+  principalDeposited: Boolean!
+  principalDepositedAt: BigInt
+  
+  # Principal Claims
+  totalPrincipalClaimed: BigDecimal!
+  principalClaimCount: BigInt!
+  
+  # Dust Rescue
+  dustRescued: BigDecimal!
+  dustRescuedAt: BigInt
+  
+  # Relationships
+  principalClaims: [PrincipalClaim!]! @derivedFrom(field: "escrow")
+}
+
+# ============================================
+# REVENUE ROUTER
+# ============================================
+type RevenueRouter @entity {
+  id: ID! # Address do contrato
+  protocol: Protocol!
+  series: RevenueSeries!
+  
+  # Configuration
+  revenueShareBPS: BigInt!
+  
+  # Financial Tracking
+  totalRevenueReceived: BigDecimal!
+  totalRoutedToSeries: BigDecimal!
+  totalReturnedToProtocol: BigDecimal!
+  owedToSeries: BigDecimal!
+  pendingToRoute: BigDecimal!
+  
+  # Routing Stats
+  routingCount: BigInt!
+  failedRouteCount: BigInt!
+  lastRoutingTimestamp: BigInt!
+  
+  # Relationships
+  routings: [RevenueRouting!]! @derivedFrom(field: "router")
+}
+
+# ============================================
+# PROTOCOL (EMISSOR)
+# ============================================
+type Protocol @entity {
+  id: ID! # Address do protocolo
+  address: Bytes!
+  
+  # Series criadas por este protocolo
+  seriesCreated: [RevenueSeries!]! @derivedFrom(field: "protocol")
+  seriesCount: BigInt!
+  
+  # Financial Metrics
+  totalCapitalRaised: BigDecimal!
+  totalRevenueShared: BigDecimal!
+  
+  # Reputation (do ProtocolReputationRegistry)
+  reputationScore: BigInt! # 0-100
+  totalRevenueDelivered: BigDecimal!
+  totalRevenueExpected: BigDecimal!
+  deliveryRate: BigDecimal! # %
+  onTimeDeliveries: BigInt!
+  lateDeliveries: BigInt!
+  missedDeliveries: BigInt!
+  blacklisted: Boolean!
+  blacklistedReason: String
+  blacklistedAt: BigInt
+  
+  # Stats
+  createdAt: BigInt!
+  lastActivityTimestamp: BigInt!
+}
+
+# ============================================
+# SERIES HOLDER (BONDHOLDER)
+# ============================================
+type SeriesHolder @entity {
+  id: ID! # series.id + "-" + holder.address
+  series: RevenueSeries!
+  holder: Bytes!
+  
+  # Balance
+  balance: BigDecimal!
+  balancePercentage: BigDecimal! # % do totalSupply
+  
+  # Revenue Tracking
+  totalRevenueClaimed: BigDecimal!
+  claimCount: BigInt!
+  lastClaimTimestamp: BigInt!
+  
+  # Principal Tracking (para Hybrid Bonds)
+  principalClaimed: Boolean!
+  principalClaimedAmount: BigDecimal
+  principalClaimedAt: BigInt
+  
+  # Timestamps
+  firstAcquiredAt: BigInt!
+  lastTransferTimestamp: BigInt!
+}
+
+# ============================================
+# REVENUE DISTRIBUTION EVENT
+# ============================================
+type RevenueDistribution @entity {
+  id: ID! # tx.hash + "-" + logIndex
+  series: RevenueSeries!
+  
+  # Distribution Details
+  amount: BigDecimal!
+  revenuePerToken: BigDecimal!
+  
+  # Transaction Info
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+  
+  # Distributor (quem enviou)
+  from: Bytes!
+}
+
+# ============================================
+# REVENUE CLAIM EVENT
+# ============================================
+type RevenueClaim @entity {
+  id: ID! # tx.hash + "-" + logIndex
+  series: RevenueSeries!
+  holder: SeriesHolder!
+  
+  # Claim Details
+  amount: BigDecimal!
+  holderAddress: Bytes!
+  
+  # Transaction Info
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# PRINCIPAL CLAIM EVENT (HYBRID BONDS)
+# ============================================
+type PrincipalClaim @entity {
+  id: ID! # tx.hash + "-" + logIndex
+  escrow: RevenueBondEscrow!
+  holder: Bytes!
+  
+  # Claim Details
+  amount: BigDecimal!
+  
+  # Transaction Info
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# REVENUE ROUTING EVENT
+# ============================================
+type RevenueRouting @entity {
+  id: ID! # tx.hash + "-" + logIndex
+  router: RevenueRouter!
+  
+  # Routing Details
+  seriesAmount: BigDecimal!
+  protocolAmount: BigDecimal!
+  success: Boolean!
+  failureReason: String
+  
+  # Transaction Info
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# ============================================
+# FACTORY STATS
+# ============================================
+type FactoryStats @entity {
+  id: ID! # Address da factory
+  address: Bytes!
+  
+  # Configuration
+  treasury: Bytes!
+  reputationRegistry: Bytes!
+  creationFeeETH: BigDecimal!
+  feesEnabled: Boolean!
+  
+  # Stats
+  totalSeriesCreated: BigInt!
+  totalFeesCollected: BigDecimal!
+  
+  # Timestamps
+  deployedAt: BigInt!
+  lastSeriesCreatedAt: BigInt!
+}
+
+# ============================================
+# DAILY SNAPSHOT (para gráficos históricos)
+# ============================================
+type DailySnapshot @entity {
+  id: ID! # timestamp do dia (00:00 UTC)
+  date: BigInt!
+  
+  # Global Metrics
+  totalRevenueBondsCreated: BigInt!
+  totalCapitalRaised: BigDecimal!
+  totalRevenueDistributed: BigDecimal!
+  activeSeries: BigInt!
+  
+  # Daily Metrics
+  newSeriesCreated: BigInt!
+  revenueDistributedToday: BigDecimal!
+  capitalRaisedToday: BigDecimal!
+}
+
+# ============================================
+# ENUMS
+# ============================================
+enum BondType {
+  SOFT      # RevenueSeries apenas (sem principal)
+  HYBRID    # RevenueBondEscrow (com principal garantido)
+}
+
+enum SeriesState {
+  Active
+  Matured
+}
+
+enum EscrowState {
+  PendingPrincipal
+  Active
+  Matured
+  Defaulted
+}

@@ -1,0 +1,11 @@
+
+Error: net::ERR_FILE_NOT_FOUND at file:///usr/lib/node_modules/mermaid-filter/node_modules/@mermaid-js/mermaid-cli/dist/index.html
+    at navigate (file:///usr/lib/node_modules/mermaid-filter/node_modules/puppeteer-core/lib/esm/puppeteer/common/Frame.js:215:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async Frame.goto (file:///usr/lib/node_modules/mermaid-filter/node_modules/puppeteer-core/lib/esm/puppeteer/common/Frame.js:181:21)
+    at async CDPPage.goto (file:///usr/lib/node_modules/mermaid-filter/node_modules/puppeteer-core/lib/esm/puppeteer/common/Page.js:435:16)
+    at async renderMermaid (file:///usr/lib/node_modules/mermaid-filter/node_modules/@mermaid-js/mermaid-cli/src/index.js:251:5)
+    at async parseMMD (file:///usr/lib/node_modules/mermaid-filter/node_modules/@mermaid-js/mermaid-cli/src/index.js:227:20)
+    at async run (file:///usr/lib/node_modules/mermaid-filter/node_modules/@mermaid-js/mermaid-cli/src/index.js:491:20)
+    at async cli (file:///usr/lib/node_modules/mermaid-filter/node_modules/@mermaid-js/mermaid-cli/src/index.js:192:3)
+

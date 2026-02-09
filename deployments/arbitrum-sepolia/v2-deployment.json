@@ -1,0 +1,21 @@
+{
+  "network": "arbitrum-sepolia",
+  "chainId": 421614,
+  "timestamp": "2026-02-03T20:53:44.157Z",
+  "deployer": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+  "contracts": {
+    "reputationRegistry": "0x6d15837a1924a37880368DD88e75eDeE5Dcc0dC8",
+    "factory": "0x3AD394e500f18d5197019484cbc24d02797678e8"
+  },
+  "configuration": {
+    "treasury": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+    "feesEnabled": false,
+    "creationFee": "0.0"
+  },
+  "safetyLimits": {
+    "maxRevenueShareBPS": "5000",
+    "minDurationDays": "30",
+    "maxDurationDays": "1825",
+    "minTotalSupply": "1000.0"
+  }
+}

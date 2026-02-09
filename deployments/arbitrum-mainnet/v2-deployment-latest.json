@@ -1,0 +1,62 @@
+{
+  "version": "v2",
+  "network": "arbitrum-one",
+  "chainId": 42161,
+  "timestamp": "2026-02-09T17:39:15.704Z",
+  "deployer": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+  "owner": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+  "treasury": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+  "contracts": {
+    "protocolReputationRegistry": "0xfe0A22D77fdf98cC556CBc2dC6B3749EBa4E89bA",
+    "revenueSeriesFactory": "0x280E83c47E243267753B7E2f322f55c52d4D2C3a",
+    "escrowDeployer": "0x989BCB780EEE189Bc85e04505e59Fd2Fb3CAA843",
+    "routerDeployer": "0x7c80F6312BFD762B958Ccf9DF2E397840c7856d3",
+    "revenueBondEscrowFactory": "0x2CfE9a33050EB77fC124ec3eAac4fA4D687bE650"
+  },
+  "configuration": {
+    "softFactory": {
+      "owner": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+      "treasury": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+      "reputationRegistry": "0xfe0A22D77fdf98cC556CBc2dC6B3749EBa4E89bA",
+      "feePolicy": "0x0000000000000000000000000000000000000000",
+      "safetyPolicy": "0x0000000000000000000000000000000000000000",
+      "accessPolicy": "0x0000000000000000000000000000000000000000",
+      "paused": false
+    },
+    "escrowFactory": {
+      "owner": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+      "treasury": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+      "reputationRegistry": "0xfe0A22D77fdf98cC556CBc2dC6B3749EBa4E89bA",
+      "escrowDeployer": "0x989BCB780EEE189Bc85e04505e59Fd2Fb3CAA843",
+      "routerDeployer": "0x7c80F6312BFD762B958Ccf9DF2E397840c7856d3",
+      "paused": false
+    }
+  },
+  "safetyLimits": {
+    "maxRevenueShareBPS": "5000",
+    "minDurationDays": "30",
+    "maxDurationDays": "1825",
+    "minTotalSupply": "1000.0"
+  },
+  "transactions": {
+    "registry": "0x10972827a6b720d7ab4b974f2a2d4c28ff82bd7af0c6ceaa27baf7cf335662ca",
+    "softFactory": "0x241e06765cdd1c7379f3b8a99a0637a4345b74d73d7b2fc37e4bc22dce893b69",
+    "escrowDeployer": "0xb42c05d60e4c1d1415e7f5fe3167565f04bf7f1ea4a375ab3cc701a7d38f39f9",
+    "routerDeployer": "0x1e8c6cd764df54d3922d2ad3929fe141b38c5ccb96dc9a685b0efd3547b83b81",
+    "escrowFactory": "0xc6c21d5ea3f416a23f329e16894b30bd00be42f69a1659ec1826d01cff09636b",
+    "authSoftFactory": "0xbed03d55bad57db3efac2f585e2039c7255283880dc0c48ce8ad69e0200e6e0e",
+    "authEscrowFactory": "0xa40666e832e28c6bb3f81f83a7149848af999024ad5a393f650cb4bd119c7e82",
+    "escrowDeployerOwnership": "0x3f1b8715f7c1ab2b16fda2470609b6951c386bd64fe6e506eb71014023739003",
+    "routerDeployerOwnership": "0xbaf521452e4e8a7ab4bed5d01c2e683c6aaa8e423704328e38715045544c8d01",
+    "softFactoryOwnership": "0xc7e08a1de78da88fc8d816c7c12155b37ee2400babb9e565f32d9ff75fcadd8b",
+    "escrowFactoryOwnership": "0x339c8340a8897b569229bbb21b3efdd65aecfef1f16f80cfdf12bf0c072ba5d4",
+    "registryOwnership": "0x1057125cb450ab167e0b821e7dde19d516eebd684c20f081b823560c069b28d9"
+  },
+  "gasUsed": {
+    "registry": "1334843",
+    "softFactory": "4483134",
+    "escrowDeployer": "3314184",
+    "routerDeployer": "1433366",
+    "escrowFactory": "1496236"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "network": "Arbitrum One",
+  "chainId": 42161,
+  "version": "v1.0.0",
+  "deployedAt": "2026-01-12T21:52:07.227Z",
+  "deployer": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+  "contracts": {
+    "RevenueSeriesFactory": {
+      "address": "0x8afA0318363FfBc29Cc28B3C98d9139C08Af737b",
+      "txHash": "0x23d97dfb48f39b5605802ba4255d674a5127dbe5430c1cbea7cbc7365993c1d8",
+      "gasUsed": 4162266,
+      "verified": true,
+      "arbiscan": "https://arbiscan.io/address/0x8afA0318363FfBc29Cc28B3C98d9139C08Af737b"
+    },
+    "Treasury": {
+      "address": "0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+      "type": "Safe Multisig",
+      "signers": 1,
+      "threshold": 1,
+      "safeLink": "https://app.safe.global/home?safe=arb1:0xBa69aEd75E8562f9D23064aEBb21683202c5279B",
+      "arbiscan": "https://arbiscan.io/address/0xBa69aEd75E8562f9D23064aEBb21683202c5279B"
+    }
+  },
+  "configuration": {
+    "creationFeeETH": "0",
+    "creationFeeERC20": "0",
+    "feesEnabled": false,
+    "MAX_REVENUE_SHARE_BPS": 5000,
+    "MIN_DURATION_DAYS": 30,
+    "MAX_DURATION_DAYS": 1825,
+    "MIN_TOTAL_SUPPLY": "1000000000000000000"
+  },
+  "notes": [
+    "Initial mainnet deployment",
+    "Fees disabled (0 ETH)",
+    "Safe multisig as owner and treasury",
+    "Single bond model (revenue-only)"
+  ]
+}

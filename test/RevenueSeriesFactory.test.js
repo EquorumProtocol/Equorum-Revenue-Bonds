@@ -1,775 +1,477 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { time } = require("@nomicfoundation/hardhat-network-helpers");
+const { deployFullStack, createSeriesViaFactory, DEFAULT_PARAMS } = require("./helpers");
 
 describe("RevenueSeriesFactory", function () {
-  let factory;
-  let protocol;
-  let otherProtocol;
-  let alice;
-  let bob;
+  let owner, treasury, protocol, rest, registry, factory;
 
   beforeEach(async function () {
-    [protocol, otherProtocol, alice, bob] = await ethers.getSigners();
-
-    const RevenueSeriesFactory = await ethers.getContractFactory("RevenueSeriesFactory");
-    factory = await RevenueSeriesFactory.deploy(protocol.address); // Treasury address
+    ({ owner, treasury, protocol, rest, registry, factory } = await deployFullStack());
   });
 
+  // ============================================
+  // DEPLOYMENT
+  // ============================================
   describe("Deployment", function () {
-    it("Should deploy successfully", async function () {
-      expect(await factory.getAddress()).to.be.properAddress;
+    it("Should set correct treasury", async function () {
+      expect(await factory.treasury()).to.equal(treasury.address);
     });
 
-    it("Should initialize with zero series", async function () {
+    it("Should set correct reputation registry", async function () {
+      expect(await factory.reputationRegistry()).to.equal(await registry.getAddress());
+    });
+
+    it("Should set owner to deployer", async function () {
+      expect(await factory.owner()).to.equal(owner.address);
+    });
+
+    it("Should start with all policies as address(0)", async function () {
+      const policies = await factory.getPolicies();
+      expect(policies.fee).to.equal(ethers.ZeroAddress);
+      expect(policies.safety).to.equal(ethers.ZeroAddress);
+      expect(policies.access).to.equal(ethers.ZeroAddress);
+    });
+
+    it("Should have correct hardcoded safety limits", async function () {
+      const limits = await factory.getSafetyLimits();
+      expect(limits.maxShareBPS).to.equal(5000);
+      expect(limits.minDurationDays).to.equal(30);
+      expect(limits.maxDurationDays).to.equal(1825);
+      expect(limits.minSupply).to.equal(ethers.parseEther("1000"));
+    });
+
+    it("Should start with zero series", async function () {
       expect(await factory.getTotalSeries()).to.equal(0);
     });
-  });
 
-  describe("Create Series", function () {
-    const NAME = "Test Revenue Series";
-    const SYMBOL = "TEST-REV";
-    const REVENUE_SHARE_BPS = 2000; // 20%
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
-
-    it("Should create series successfully", async function () {
-      const tx = await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const receipt = await tx.wait();
-      const event = receipt.logs.find(log => {
-        try {
-          return factory.interface.parseLog(log).name === "SeriesCreated";
-        } catch {
-          return false;
-        }
-      });
-
-      expect(event).to.not.be.undefined;
+    it("Should revert if treasury is zero address", async function () {
+      const Factory = await ethers.getContractFactory("contracts/v2/core/RevenueSeriesFactory.sol:RevenueSeriesFactory");
+      await expect(
+        Factory.deploy(ethers.ZeroAddress, await registry.getAddress())
+      ).to.be.revertedWith("Invalid treasury");
     });
 
-    it("Should return series and router addresses", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
+    it("Should revert if registry is zero address", async function () {
+      const Factory = await ethers.getContractFactory("contracts/v2/core/RevenueSeriesFactory.sol:RevenueSeriesFactory");
+      await expect(
+        Factory.deploy(treasury.address, ethers.ZeroAddress)
+      ).to.be.revertedWith("Invalid registry");
+    });
+  });
 
-      expect(result.seriesAddress).to.be.properAddress;
-      expect(result.routerAddress).to.be.properAddress;
-      expect(result.seriesAddress).to.not.equal(ethers.ZeroAddress);
-      expect(result.routerAddress).to.not.equal(ethers.ZeroAddress);
+  // ============================================
+  // CREATE SERIES
+  // ============================================
+  describe("Create Series", function () {
+    it("Should create series successfully", async function () {
+      const { series, router } = await createSeriesViaFactory(factory, protocol);
+      expect(await series.getAddress()).to.be.properAddress;
+      expect(await router.getAddress()).to.be.properAddress;
     });
 
     it("Should emit SeriesCreated event", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          REVENUE_SHARE_BPS,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
       ).to.emit(factory, "SeriesCreated");
     });
 
-    it("Should register series in allSeries array", async function () {
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
+    it("Should increment total series count", async function () {
+      await createSeriesViaFactory(factory, protocol);
       expect(await factory.getTotalSeries()).to.equal(1);
-      const allSeries = await factory.allSeries(0);
-      expect(allSeries).to.be.properAddress;
+    });
+
+    it("Should register series in allSeries array", async function () {
+      const { seriesAddress } = await createSeriesViaFactory(factory, protocol);
+      const all = await factory.getAllSeries();
+      expect(all.length).to.equal(1);
+      expect(all[0]).to.equal(seriesAddress);
     });
 
     it("Should register series in seriesByProtocol mapping", async function () {
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
+      const { seriesAddress } = await createSeriesViaFactory(factory, protocol);
       const protocolSeries = await factory.getSeriesByProtocol(protocol.address);
       expect(protocolSeries.length).to.equal(1);
-      expect(protocolSeries[0]).to.be.properAddress;
+      expect(protocolSeries[0]).to.equal(seriesAddress);
     });
 
     it("Should register router in routerBySeries mapping", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const router = await factory.getRouterForSeries(result.seriesAddress);
-      expect(router).to.equal(result.routerAddress);
+      const { seriesAddress, routerAddress } = await createSeriesViaFactory(factory, protocol);
+      expect(await factory.getRouterForSeries(seriesAddress)).to.equal(routerAddress);
     });
 
     it("Should transfer series ownership to protocol", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series = RevenueSeries.attach(result.seriesAddress);
-      
+      const { series } = await createSeriesViaFactory(factory, protocol);
       expect(await series.owner()).to.equal(protocol.address);
     });
 
     it("Should transfer router ownership to protocol", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const RevenueRouter = await ethers.getContractFactory("RevenueRouter");
-      const router = RevenueRouter.attach(result.routerAddress);
-      
+      const { router } = await createSeriesViaFactory(factory, protocol);
       expect(await router.owner()).to.equal(protocol.address);
     });
 
-    it("Should mint tokens to protocol", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
+    it("Should mint all tokens to protocol", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      expect(await series.balanceOf(protocol.address)).to.equal(DEFAULT_PARAMS.totalSupply);
+    });
 
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series = RevenueSeries.attach(result.seriesAddress);
-      
-      expect(await series.balanceOf(protocol.address)).to.equal(TOTAL_SUPPLY);
+    it("Should set correct series parameters", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      expect(await series.revenueShareBPS()).to.equal(DEFAULT_PARAMS.revenueShareBPS);
+      expect(await series.totalTokenSupply()).to.equal(DEFAULT_PARAMS.totalSupply);
+      expect(await series.minDistributionAmount()).to.equal(DEFAULT_PARAMS.minDistributionAmount);
+      expect(await series.active()).to.be.true;
     });
 
     it("Should link router and series correctly", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series = RevenueSeries.attach(result.seriesAddress);
-      
-      const RevenueRouter = await ethers.getContractFactory("RevenueRouter");
-      const router = RevenueRouter.attach(result.routerAddress);
-
-      expect(await series.router()).to.equal(result.routerAddress);
-      expect(await router.revenueSeries()).to.equal(result.seriesAddress);
+      const { series, router, seriesAddress, routerAddress } = await createSeriesViaFactory(factory, protocol);
+      expect(await series.router()).to.equal(routerAddress);
+      expect(await router.revenueSeries()).to.equal(seriesAddress);
     });
   });
 
+  // ============================================
+  // ACCESS CONTROL
+  // ============================================
   describe("Access Control", function () {
-    const NAME = "Test Revenue Series";
-    const SYMBOL = "TEST-REV";
-    const REVENUE_SHARE_BPS = 2000;
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
-
-    it("Should only allow protocol to create series in their name", async function () {
+    it("Should allow protocol to create series for itself", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          REVENUE_SHARE_BPS,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
       ).to.not.be.reverted;
     });
 
-    it("Should reject if msg.sender != protocol", async function () {
+    it("Should reject if msg.sender != protocol argument", async function () {
+      const [, , , alice] = await ethers.getSigners();
       await expect(
         factory.connect(alice).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          REVENUE_SHARE_BPS,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
-      ).to.be.revertedWith("Only protocol can create series");
+      ).to.be.revertedWith("Only protocol can create series for itself");
     });
 
-    it("Should reject if trying to create for another protocol", async function () {
+    it("Should reject creating series for another address", async function () {
+      const [, , , alice] = await ethers.getSigners();
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          otherProtocol.address,
-          REVENUE_SHARE_BPS,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, alice.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
-      ).to.be.revertedWith("Only protocol can create series");
+      ).to.be.revertedWith("Only protocol can create series for itself");
     });
-  });
-
-  describe("Validation", function () {
-    const NAME = "Test Revenue Series";
-    const SYMBOL = "TEST-REV";
-    const REVENUE_SHARE_BPS = 2000;
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
 
     it("Should reject zero protocol address", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          ethers.ZeroAddress,
-          REVENUE_SHARE_BPS,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, ethers.ZeroAddress,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
-      ).to.be.revertedWith("Only protocol can create series");
+      ).to.be.revertedWith("Invalid protocol");
     });
+  });
 
-    it("Should reject invalid BPS (zero)", async function () {
+  // ============================================
+  // VALIDATION (Hardcoded Safety Limits)
+  // ============================================
+  describe("Validation", function () {
+    it("Should reject BPS = 0", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          0,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
-        )
-      ).to.be.revertedWith("Invalid BPS");
-    });
-
-    it("Should reject invalid BPS (> 10000)", async function () {
-      await expect(
-        factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          10001,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          0, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
       ).to.be.revertedWith("Invalid BPS");
     });
 
-    it("Should reject zero duration", async function () {
+    it("Should reject BPS > 5000 (50%)", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          REVENUE_SHARE_BPS,
-          0,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          5001, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.be.revertedWith("Invalid BPS");
+    });
+
+    it("Should accept BPS = 1 (minimum)", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          1, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should accept BPS = 5000 (maximum)", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          "Max BPS", "MAXBPS", protocol.address,
+          5000, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should reject duration < 30 days", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, 29,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
         )
       ).to.be.revertedWith("Invalid duration");
     });
 
-    it("Should reject zero supply", async function () {
+    it("Should reject duration > 1825 days (5 years)", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          REVENUE_SHARE_BPS,
-          DURATION_DAYS,
-          0
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, 1826,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.be.revertedWith("Invalid duration");
+    });
+
+    it("Should accept duration = 30 (minimum)", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, 30,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should accept duration = 1825 (maximum)", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          "Long", "LONG", protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, 1825,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should reject supply < 1000 tokens", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          ethers.parseEther("999"), DEFAULT_PARAMS.minDistributionAmount
         )
       ).to.be.revertedWith("Supply too low");
     });
 
-    it("Should accept valid BPS at boundaries", async function () {
+    it("Should accept supply = 1000 tokens (minimum)", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME,
-          SYMBOL,
-          protocol.address,
-          1,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          ethers.parseEther("1000"), DEFAULT_PARAMS.minDistributionAmount
         )
       ).to.not.be.reverted;
+    });
 
-      // MAX is now 5000 (50%)
+    it("Should reject minDistributionAmount < 0.001 ether", async function () {
       await expect(
         factory.connect(protocol).createSeries(
-          NAME + "2",
-          SYMBOL + "2",
-          protocol.address,
-          5000,
-          DURATION_DAYS,
-          TOTAL_SUPPLY
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, ethers.parseEther("0.0009")
+        )
+      ).to.be.revertedWith("Min distribution too low");
+    });
+
+    it("Should accept minDistributionAmount = 0.001 ether (minimum)", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, ethers.parseEther("0.001")
         )
       ).to.not.be.reverted;
     });
   });
 
+  // ============================================
+  // MULTIPLE SERIES
+  // ============================================
   describe("Multiple Series", function () {
-    const NAME1 = "Series 1";
-    const SYMBOL1 = "SER1";
-    const NAME2 = "Series 2";
-    const SYMBOL2 = "SER2";
-    const REVENUE_SHARE_BPS = 2000;
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
-
     it("Should allow protocol to create multiple series", async function () {
-      await factory.connect(protocol).createSeries(
-        NAME1,
-        SYMBOL1,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME2,
-        SYMBOL2,
-        protocol.address,
-        3000,
-        180,
-        ethers.parseEther("500000")
-      );
-
+      await createSeriesViaFactory(factory, protocol, { name: "Series 1", symbol: "S1" });
+      await createSeriesViaFactory(factory, protocol, { name: "Series 2", symbol: "S2" });
       expect(await factory.getTotalSeries()).to.equal(2);
-      const protocolSeries = await factory.getSeriesByProtocol(protocol.address);
-      expect(protocolSeries.length).to.equal(2);
     });
 
     it("Should track series from different protocols separately", async function () {
-      await factory.connect(protocol).createSeries(
-        NAME1,
-        SYMBOL1,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
+      const otherProtocol = rest[0];
+      await createSeriesViaFactory(factory, protocol, { name: "P1 Series", symbol: "P1S" });
+      await createSeriesViaFactory(factory, otherProtocol, { name: "P2 Series", symbol: "P2S" });
 
-      await factory.connect(otherProtocol).createSeries(
-        NAME2,
-        SYMBOL2,
-        otherProtocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const protocol1Series = await factory.getSeriesByProtocol(protocol.address);
-      const protocol2Series = await factory.getSeriesByProtocol(otherProtocol.address);
-
-      expect(protocol1Series.length).to.equal(1);
-      expect(protocol2Series.length).to.equal(1);
+      const p1Series = await factory.getSeriesByProtocol(protocol.address);
+      const p2Series = await factory.getSeriesByProtocol(otherProtocol.address);
+      expect(p1Series.length).to.equal(1);
+      expect(p2Series.length).to.equal(1);
       expect(await factory.getTotalSeries()).to.equal(2);
     });
 
     it("Should create independent series with different parameters", async function () {
-      const result1 = await factory.connect(protocol).createSeries.staticCall(
-        NAME1,
-        SYMBOL1,
-        protocol.address,
-        2000,
-        365,
-        ethers.parseEther("1000000")
-      );
+      const { series: s1 } = await createSeriesViaFactory(factory, protocol, {
+        name: "S1", symbol: "S1", revenueShareBPS: 2000, totalSupply: ethers.parseEther("1000000"),
+      });
+      const { series: s2 } = await createSeriesViaFactory(factory, protocol, {
+        name: "S2", symbol: "S2", revenueShareBPS: 5000, totalSupply: ethers.parseEther("500000"),
+      });
 
-      await factory.connect(protocol).createSeries(
-        NAME1,
-        SYMBOL1,
-        protocol.address,
-        2000,
-        365,
-        ethers.parseEther("1000000")
-      );
-
-      const result2 = await factory.connect(protocol).createSeries.staticCall(
-        NAME2,
-        SYMBOL2,
-        protocol.address,
-        5000,
-        180,
-        ethers.parseEther("500000")
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME2,
-        SYMBOL2,
-        protocol.address,
-        5000,
-        180,
-        ethers.parseEther("500000")
-      );
-
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series1 = RevenueSeries.attach(result1.seriesAddress);
-      const series2 = RevenueSeries.attach(result2.seriesAddress);
-
-      expect(await series1.revenueShareBPS()).to.equal(2000);
-      expect(await series2.revenueShareBPS()).to.equal(5000);
-      expect(await series1.totalTokenSupply()).to.equal(ethers.parseEther("1000000"));
-      expect(await series2.totalTokenSupply()).to.equal(ethers.parseEther("500000"));
+      expect(await s1.revenueShareBPS()).to.equal(2000);
+      expect(await s2.revenueShareBPS()).to.equal(5000);
+      expect(await s1.totalTokenSupply()).to.equal(ethers.parseEther("1000000"));
+      expect(await s2.totalTokenSupply()).to.equal(ethers.parseEther("500000"));
     });
   });
 
+  // ============================================
+  // VIEW FUNCTIONS
+  // ============================================
   describe("View Functions", function () {
-    const NAME = "Test Revenue Series";
-    const SYMBOL = "TEST-REV";
-    const REVENUE_SHARE_BPS = 2000;
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
-
-    beforeEach(async function () {
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-    });
-
     it("Should return correct total series count", async function () {
+      await createSeriesViaFactory(factory, protocol);
       expect(await factory.getTotalSeries()).to.equal(1);
-
-      await factory.connect(otherProtocol).createSeries(
-        "Series 2",
-        "SER2",
-        otherProtocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      expect(await factory.getTotalSeries()).to.equal(2);
     });
 
     it("Should return series by protocol", async function () {
+      await createSeriesViaFactory(factory, protocol);
       const series = await factory.getSeriesByProtocol(protocol.address);
       expect(series.length).to.equal(1);
-      expect(series[0]).to.be.properAddress;
     });
 
     it("Should return empty array for protocol with no series", async function () {
-      const series = await factory.getSeriesByProtocol(alice.address);
+      const series = await factory.getSeriesByProtocol(rest[0].address);
       expect(series.length).to.equal(0);
     });
 
-    it("Should return router for series", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        "Series 2",
-        "SER2",
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        "Series 2",
-        "SER2",
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const router = await factory.getRouterForSeries(result.seriesAddress);
-      expect(router).to.equal(result.routerAddress);
-    });
-
-    it("Should return zero address for non-existent series", async function () {
-      const router = await factory.getRouterForSeries(alice.address);
-      expect(router).to.equal(ethers.ZeroAddress);
+    it("Should return zero address for non-existent series router", async function () {
+      expect(await factory.getRouterForSeries(rest[0].address)).to.equal(ethers.ZeroAddress);
     });
   });
 
-  describe("Integration", function () {
-    const NAME = "Integration Test Series";
-    const SYMBOL = "INT-TEST";
-    const REVENUE_SHARE_BPS = 2000;
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
-
-    it("Should create fully functional series and router", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series = RevenueSeries.attach(result.seriesAddress);
-      
-      const RevenueRouter = await ethers.getContractFactory("RevenueRouter");
-      const router = RevenueRouter.attach(result.routerAddress);
-
-      // Test series functionality
-      await series.connect(protocol).transfer(alice.address, ethers.parseEther("100000"));
-      expect(await series.balanceOf(alice.address)).to.equal(ethers.parseEther("100000"));
-
-      // Test router functionality
-      await alice.sendTransaction({ to: result.routerAddress, value: ethers.parseEther("10") });
-      await router.routeRevenue();
-
-      expect(await series.totalRevenueReceived()).to.equal(ethers.parseEther("2")); // 20%
+  // ============================================
+  // ADMIN FUNCTIONS
+  // ============================================
+  describe("Admin Functions", function () {
+    it("Should allow owner to update treasury", async function () {
+      const newTreasury = rest[0].address;
+      await expect(factory.setTreasury(newTreasury))
+        .to.emit(factory, "TreasuryUpdated")
+        .withArgs(treasury.address, newTreasury);
+      expect(await factory.treasury()).to.equal(newTreasury);
     });
 
-    it("Should allow protocol to manage created series", async function () {
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
-
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series = RevenueSeries.attach(result.seriesAddress);
-
-      // Protocol can distribute revenue
-      await expect(
-        series.connect(protocol).distributeRevenue({ value: ethers.parseEther("5") })
-      ).to.not.be.reverted;
-
-      // Protocol can transfer ownership
-      await expect(
-        series.connect(protocol).transferOwnership(alice.address)
-      ).to.not.be.reverted;
+    it("Should reject zero address treasury", async function () {
+      await expect(factory.setTreasury(ethers.ZeroAddress))
+        .to.be.revertedWith("Invalid treasury");
     });
 
-    it("Should create series with correct maturity date", async function () {
-      const beforeCreate = await time.latest();
-      
-      const result = await factory.connect(protocol).createSeries.staticCall(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
+    it("Should reject non-owner setting treasury", async function () {
+      await expect(factory.connect(protocol).setTreasury(rest[0].address))
+        .to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    });
 
-      await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
-      );
+    it("Should allow owner to update reputation registry", async function () {
+      const newRegistry = rest[0].address;
+      await expect(factory.updateReputationRegistry(newRegistry))
+        .to.emit(factory, "ReputationRegistryUpdated");
+      expect(await factory.reputationRegistry()).to.equal(newRegistry);
+    });
 
-      const RevenueSeries = await ethers.getContractFactory("RevenueSeries");
-      const series = RevenueSeries.attach(result.seriesAddress);
-
-      const maturityDate = await series.maturityDate();
-      const expectedMaturity = beforeCreate + (DURATION_DAYS * 24 * 60 * 60);
-      
-      expect(maturityDate).to.be.closeTo(expectedMaturity, 10);
+    it("Should reject zero address registry", async function () {
+      await expect(factory.updateReputationRegistry(ethers.ZeroAddress))
+        .to.be.revertedWith("Invalid registry");
     });
   });
 
-  describe("Gas Optimization", function () {
-    const NAME = "Gas Test Series";
-    const SYMBOL = "GAS-TEST";
-    const REVENUE_SHARE_BPS = 2000;
-    const DURATION_DAYS = 365;
-    const TOTAL_SUPPLY = ethers.parseEther("1000000");
+  // ============================================
+  // PAUSABLE
+  // ============================================
+  describe("Pausable", function () {
+    it("Should allow owner to pause", async function () {
+      await factory.pause();
+      expect(await factory.paused()).to.be.true;
+    });
+
+    it("Should reject createSeries when paused", async function () {
+      await factory.pause();
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.be.revertedWithCustomError(factory, "EnforcedPause");
+    });
+
+    it("Should allow createSeries after unpause", async function () {
+      await factory.pause();
+      await factory.unpause();
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should reject non-owner pause", async function () {
+      await expect(factory.connect(protocol).pause())
+        .to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    });
+  });
+
+  // ============================================
+  // EDGE CASES
+  // ============================================
+  describe("Edge Cases", function () {
+    it("Should handle very long names and symbols", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          "A".repeat(100), "B".repeat(50), protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should handle very large supply (1 billion)", async function () {
+      await expect(
+        factory.connect(protocol).createSeries(
+          DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+          DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+          ethers.parseEther("1000000000"), DEFAULT_PARAMS.minDistributionAmount
+        )
+      ).to.not.be.reverted;
+    });
 
     it("Should have reasonable gas cost for series creation", async function () {
       const tx = await factory.connect(protocol).createSeries(
-        NAME,
-        SYMBOL,
-        protocol.address,
-        REVENUE_SHARE_BPS,
-        DURATION_DAYS,
-        TOTAL_SUPPLY
+        DEFAULT_PARAMS.name, DEFAULT_PARAMS.symbol, protocol.address,
+        DEFAULT_PARAMS.revenueShareBPS, DEFAULT_PARAMS.durationDays,
+        DEFAULT_PARAMS.totalSupply, DEFAULT_PARAMS.minDistributionAmount
       );
-
       const receipt = await tx.wait();
-      
-      // Should be under 5M gas (deploying 2 contracts)
       expect(receipt.gasUsed).to.be.lt(5000000);
-    });
-  });
-
-  describe("Edge Cases", function () {
-    it("Should handle very long names and symbols", async function () {
-      const longName = "A".repeat(100);
-      const longSymbol = "B".repeat(50);
-
-      await expect(
-        factory.connect(protocol).createSeries(
-          longName,
-          longSymbol,
-          protocol.address,
-          2000,
-          365,
-          ethers.parseEther("1000000")
-        )
-      ).to.not.be.reverted;
-    });
-
-    it("Should handle minimum valid parameters", async function () {
-      await expect(
-        factory.connect(protocol).createSeries(
-          "Min",
-          "MIN",
-          protocol.address,
-          1, // Min BPS
-          30, // MIN_DURATION_DAYS
-          ethers.parseEther("1000") // MIN_TOTAL_SUPPLY
-        )
-      ).to.not.be.reverted;
-    });
-
-    it("Should handle maximum valid BPS", async function () {
-      await expect(
-        factory.connect(protocol).createSeries(
-          "Max BPS",
-          "MAX",
-          protocol.address,
-          5000, // MAX_REVENUE_SHARE_BPS (50%)
-          365,
-          ethers.parseEther("1000000")
-        )
-      ).to.not.be.reverted;
-    });
-
-    it("Should handle very large supply", async function () {
-      const largeSupply = ethers.parseEther("1000000000"); // 1 billion tokens
-
-      await expect(
-        factory.connect(protocol).createSeries(
-          "Large Supply",
-          "LARGE",
-          protocol.address,
-          2000,
-          365,
-          largeSupply
-        )
-      ).to.not.be.reverted;
-    });
-
-    it("Should handle very long duration", async function () {
-      const longDuration = 1825; // MAX_DURATION_DAYS (5 years)
-
-      await expect(
-        factory.connect(protocol).createSeries(
-          "Long Duration",
-          "LONG",
-          protocol.address,
-          2000,
-          longDuration,
-          ethers.parseEther("1000000")
-        )
-      ).to.not.be.reverted;
     });
   });
 });

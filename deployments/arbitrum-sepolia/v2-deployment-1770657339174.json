@@ -1,0 +1,45 @@
+{
+  "version": "v2",
+  "network": "arbitrum-sepolia",
+  "chainId": 421614,
+  "timestamp": "2026-02-09T17:15:39.174Z",
+  "deployer": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+  "treasury": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+  "contracts": {
+    "protocolReputationRegistry": "0xE6cBDa1dBAb26d6740d5D0158EF4b0114fcb525F",
+    "revenueSeriesFactory": "0x963Db5378cB47f7d9DBf07CB2378DA39b427789b",
+    "escrowDeployer": "0xEae9d5c25b308e025033ba5901Dcb35e4c124baa",
+    "routerDeployer": "0x6C23754368473E53758a49dF4F74C35e98F95D3A",
+    "revenueBondEscrowFactory": "0x1e88fC591c2E5cA12C713f7C4BE39f2b14D202cB"
+  },
+  "configuration": {
+    "softFactory": {
+      "treasury": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+      "reputationRegistry": "0xE6cBDa1dBAb26d6740d5D0158EF4b0114fcb525F",
+      "feePolicy": "0x0000000000000000000000000000000000000000",
+      "safetyPolicy": "0x0000000000000000000000000000000000000000",
+      "accessPolicy": "0x0000000000000000000000000000000000000000",
+      "paused": false
+    },
+    "escrowFactory": {
+      "treasury": "0x48CF80F950E52d6D55537a2A7de0Dbd7e1532f77",
+      "reputationRegistry": "0xE6cBDa1dBAb26d6740d5D0158EF4b0114fcb525F",
+      "escrowDeployer": "0xEae9d5c25b308e025033ba5901Dcb35e4c124baa",
+      "routerDeployer": "0x6C23754368473E53758a49dF4F74C35e98F95D3A",
+      "paused": false
+    }
+  },
+  "safetyLimits": {
+    "maxRevenueShareBPS": "5000",
+    "minDurationDays": "30",
+    "maxDurationDays": "1825",
+    "minTotalSupply": "1000.0"
+  },
+  "gasUsed": {
+    "registry": "1395089",
+    "softFactory": "4646947",
+    "escrowDeployer": "3436705",
+    "routerDeployer": "1491235",
+    "escrowFactory": "1555158"
+  }
+}

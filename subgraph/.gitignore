@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Generated files (do not commit)
+generated/
+build/
+
+# ABIs (copied from artifacts, regenerate with setup.sh)
+abis/*.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Graph CLI
+.graph/

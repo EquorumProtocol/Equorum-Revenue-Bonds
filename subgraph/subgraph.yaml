@@ -1,0 +1,176 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  # ============================================
+  # REVENUE SERIES FACTORY
+  # ============================================
+  - kind: ethereum/contract
+    name: RevenueSeriesFactory
+    network: arbitrum-one
+    source:
+      address: "0x8afA0318363FfBc29Cc28B3C98d9139C08Af737b"
+      abi: RevenueSeriesFactory
+      startBlock: 283947000 # Block do deploy da Factory
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FactoryStats
+        - RevenueSeries
+        - RevenueRouter
+        - Protocol
+        - ProtocolStats
+      abis:
+        - name: RevenueSeriesFactory
+          file: ./abis/RevenueSeriesFactory.json
+        - name: RevenueSeries
+          file: ./abis/RevenueSeries.json
+        - name: RevenueBondEscrow
+          file: ./abis/RevenueBondEscrow.json
+        - name: RevenueRouter
+          file: ./abis/RevenueRouter.json
+      eventHandlers:
+        - event: SeriesCreated(indexed address,indexed address,indexed address,string,string,uint256,uint256,uint256)
+          handler: handleSeriesCreated
+        - event: FeeCollected(indexed address,indexed address,uint256,string)
+          handler: handleFeeCollected
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+        - event: FeesConfigUpdated(bool,uint256)
+          handler: handleFeesConfigUpdated
+      file: ./src/factory.ts
+
+templates:
+  # ============================================
+  # REVENUE SERIES (SOFT BOND) - Template dinâmico
+  # ============================================
+  - kind: ethereum/contract
+    name: RevenueSeries
+    network: arbitrum-one
+    source:
+      abi: RevenueSeries
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - RevenueSeries
+        - RevenueDistribution
+        - RevenueClaim
+        - SeriesHolder
+        - Protocol
+        - ProtocolStats
+        - DailySnapshot
+      abis:
+        - name: RevenueSeries
+          file: ./abis/RevenueSeries.json
+      eventHandlers:
+        - event: RevenueReceived(indexed address,uint256,uint256)
+          handler: handleRevenueReceived
+        - event: RevenueClaimed(indexed address,uint256)
+          handler: handleRevenueClaimed
+        - event: SeriesMatured(uint256)
+          handler: handleSeriesMatured
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/revenue-series.ts
+
+  # ============================================
+  # REVENUE BOND ESCROW (HYBRID BOND) - Template dinâmico
+  # ============================================
+  - kind: ethereum/contract
+    name: RevenueBondEscrow
+    network: arbitrum-one
+    source:
+      abi: RevenueBondEscrow
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - RevenueBondEscrow
+        - RevenueSeries
+        - PrincipalClaim
+        - SeriesHolder
+        - ProtocolStats
+      abis:
+        - name: RevenueBondEscrow
+          file: ./abis/RevenueBondEscrow.json
+        - name: RevenueSeries
+          file: ./abis/RevenueSeries.json
+      eventHandlers:
+        - event: PrincipalDeposited(uint256,uint256)
+          handler: handlePrincipalDeposited
+        - event: PrincipalClaimed(indexed address,uint256)
+          handler: handlePrincipalClaimed
+        - event: SeriesDefaulted(uint256)
+          handler: handleSeriesDefaulted
+        - event: DustRescued(uint256)
+          handler: handleDustRescued
+        - event: RevenueReceived(indexed address,uint256,uint256)
+          handler: handleRevenueReceived
+        - event: RevenueClaimed(indexed address,uint256)
+          handler: handleRevenueClaimed
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/revenue-bond-escrow.ts
+
+  # ============================================
+  # REVENUE ROUTER - Template dinâmico
+  # ============================================
+  - kind: ethereum/contract
+    name: RevenueRouter
+    network: arbitrum-one
+    source:
+      abi: RevenueRouter
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - RevenueRouter
+        - RevenueRouting
+        - RevenueSeries
+      abis:
+        - name: RevenueRouter
+          file: ./abis/RevenueRouter.json
+      eventHandlers:
+        - event: RevenueReceived(indexed address,uint256,uint256)
+          handler: handleRevenueReceived
+        - event: RevenueRouted(uint256,uint256,uint256)
+          handler: handleRevenueRouted
+        - event: RouteAttemptFailed(string,uint256)
+          handler: handleRouteAttemptFailed
+      file: ./src/revenue-router.ts
+
+  # ============================================
+  # PROTOCOL REPUTATION REGISTRY - Template dinâmico
+  # ============================================
+  - kind: ethereum/contract
+    name: ProtocolReputationRegistry
+    network: arbitrum-one
+    source:
+      abi: ProtocolReputationRegistry
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Protocol
+        - RevenueSeries
+      abis:
+        - name: ProtocolReputationRegistry
+          file: ./abis/ProtocolReputationRegistry.json
+      eventHandlers:
+        - event: SeriesRegistered(indexed address,indexed address,uint256,uint256)
+          handler: handleSeriesRegistered
+        - event: RevenueReported(indexed address,indexed address,uint256,uint256,bool)
+          handler: handleRevenueReported
+        - event: ProtocolBlacklisted(indexed address,string)
+          handler: handleProtocolBlacklisted
+        - event: ProtocolWhitelisted(indexed address)
+          handler: handleProtocolWhitelisted
+      file: ./src/reputation-registry.ts

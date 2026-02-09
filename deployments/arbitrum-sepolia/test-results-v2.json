@@ -1,0 +1,167 @@
+{
+  "timestamp": "2026-02-03T20:55:16.486Z",
+  "network": "arbitrum-sepolia",
+  "factory": "0x3AD394e500f18d5197019484cbc24d02797678e8",
+  "testSeries": "0x2D990E3401ce9c30d3876Da3445E67f09551e9ac",
+  "results": {
+    "passed": [
+      {
+        "name": "Factory.treasury() retorna endereço válido",
+        "details": ""
+      },
+      {
+        "name": "Factory.reputationRegistry() aponta para contrato correto",
+        "details": ""
+      },
+      {
+        "name": "Factory.feesEnabled() está desabilitado (testnet)",
+        "details": ""
+      },
+      {
+        "name": "Factory.creationFeeETH() é zero",
+        "details": ""
+      },
+      {
+        "name": "MAX_REVENUE_SHARE_BPS = 5000 (50%)",
+        "details": ""
+      },
+      {
+        "name": "MIN_DURATION_DAYS = 30",
+        "details": ""
+      },
+      {
+        "name": "MAX_DURATION_DAYS = 1825 (5 anos)",
+        "details": ""
+      },
+      {
+        "name": "MIN_TOTAL_SUPPLY = 1000e18",
+        "details": ""
+      },
+      {
+        "name": "Série criada com sucesso",
+        "details": "Series: 0x2D990E3401ce9c30d3876Da3445E67f09551e9ac"
+      },
+      {
+        "name": "Router criado com sucesso",
+        "details": "Router: 0xd83BA1fCa3345Af7261a45E5878B662D88f1c7d3"
+      },
+      {
+        "name": "Gas usado para criação",
+        "details": "2713764 gas"
+      },
+      {
+        "name": "Nome da série correto",
+        "details": ""
+      },
+      {
+        "name": "Símbolo da série correto",
+        "details": ""
+      },
+      {
+        "name": "Total supply correto",
+        "details": ""
+      },
+      {
+        "name": "Protocol é o deployer",
+        "details": ""
+      },
+      {
+        "name": "Router address válido",
+        "details": ""
+      },
+      {
+        "name": "Revenue share correto",
+        "details": ""
+      },
+      {
+        "name": "Série está ativa",
+        "details": ""
+      },
+      {
+        "name": "Maturity date correto (~180 dias)",
+        "details": "Diff: 3s"
+      },
+      {
+        "name": "Deployer recebeu todos os tokens",
+        "details": ""
+      },
+      {
+        "name": "Revenue distribuído com sucesso",
+        "details": "Tx: 0xf397ca08b291bbaffb652cf6015cd9baf710f0c2821309fae07b42d55e7685d4"
+      },
+      {
+        "name": "totalRevenueReceived atualizado",
+        "details": ""
+      },
+      {
+        "name": "Gas usado para distribuição",
+        "details": "149760 gas"
+      },
+      {
+        "name": "calculateClaimable retorna valor > 0",
+        "details": "0.001 ETH"
+      },
+      {
+        "name": "Claim executado com sucesso",
+        "details": "Tx: 0x94e7f464042fc162801dcbd33176127e9e1218abb86104ca705a57ea0649c882"
+      },
+      {
+        "name": "ETH recebido corresponde ao claimable",
+        "details": "Received: 0.001 ETH"
+      },
+      {
+        "name": "Gas usado para claim",
+        "details": "71127 gas"
+      },
+      {
+        "name": "Claimable zerado após claim",
+        "details": ""
+      },
+      {
+        "name": "Protocol tem séries criadas",
+        "details": "Count: 2"
+      },
+      {
+        "name": "Total revenue delivered > 0",
+        "details": "Total: 0.002 ETH"
+      },
+      {
+        "name": "Reputation score calculado",
+        "details": "Score: 25"
+      },
+      {
+        "name": "Protocol não está blacklisted",
+        "details": ""
+      },
+      {
+        "name": "Rejeitar revenue share > 50%",
+        "details": "Corretamente rejeitado"
+      },
+      {
+        "name": "Rejeitar duration < 30 dias",
+        "details": "Corretamente rejeitado"
+      },
+      {
+        "name": "Rejeitar total supply < 1000 tokens",
+        "details": "Corretamente rejeitado"
+      },
+      {
+        "name": "Factory pausado com sucesso",
+        "details": ""
+      },
+      {
+        "name": "Rejeitar criação enquanto pausado",
+        "details": "Corretamente rejeitado"
+      },
+      {
+        "name": "Factory despausado com sucesso",
+        "details": ""
+      }
+    ],
+    "failed": [],
+    "warnings": [
+      "Gas costs são altos mas esperados para contratos complexos",
+      "Considerar otimizações futuras se necessário"
+    ]
+  }
+}

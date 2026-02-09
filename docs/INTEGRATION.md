@@ -1,10 +1,27 @@
 # Integration Guide
 
-**Integrate Equorum Revenue Bonds in 10 minutes**
+**Integrate Revenue Bonds in 10 minutes**
 
 ## Overview
 
-Equorum allows protocols to create tokenized revenue streams that automatically distribute fees to holders. This guide shows you how to integrate it into your protocol.
+Revenue Bonds allows protocols to create tokenized revenue streams that automatically distribute fees to holders. This guide shows you how to integrate it into your protocol.
+
+## Contract Addresses (Arbitrum One)
+
+| Contract | Address |
+|----------|---------|
+| **RevenueSeriesFactory** (Soft Bonds) | `0x280E83c47E243267753B7E2f322f55c52d4D2C3a` |
+| **RevenueBondEscrowFactory** (Guaranteed Bonds) | `0x2CfE9a33050EB77fC124ec3eAac4fA4D687bE650` |
+
+## Choose Your Bond Type
+
+| | Soft Bond | Guaranteed Bond |
+|---|---|---|
+| **Principal** | None | Locked in escrow |
+| **Risk** | Higher (trust-based) | Lower (principal protected) |
+| **Token minting** | At creation | After principal deposit |
+| **Sale** | Off-chain / DEX | Built-in buyTokens() |
+| **Best for** | Established protocols | New protocols building trust |
 
 ## Flow Diagram
 
@@ -314,6 +331,104 @@ function onTradeExecuted(uint256 feeAmount) internal {
     }
 }
 ```
+
+---
+
+## Guaranteed Bonds (Escrow) Integration
+
+### Step 1: Create a Guaranteed Bond Series
+
+```solidity
+address constant ESCROW_FACTORY = 0x2CfE9a33050EB77fC124ec3eAac4fA4D687bE650;
+
+function createGuaranteedBond() external returns (address escrow, address router) {
+    IRevenueBondEscrowFactory factory = IRevenueBondEscrowFactory(ESCROW_FACTORY);
+
+    (escrow, router) = factory.createEscrowSeries(
+        "Protocol Guaranteed Bond Q1",  // Name
+        "PROTO-GB-Q1",                  // Symbol
+        address(this),                  // Protocol (must be msg.sender)
+        2000,                           // 20% revenue share
+        180,                            // 180 days
+        1_000_000e18,                   // 1M tokens
+        500 ether,                      // 500 ETH principal
+        0.001 ether,                    // Min distribution
+        30                              // 30 days deposit deadline
+    );
+    // State: PendingPrincipal (no tokens minted yet)
+}
+```
+
+### Step 2: Deposit Principal
+
+```solidity
+function depositPrincipal() external onlyOwner {
+    // Must send exact principalAmount
+    IRevenueBondEscrow(escrowAddress).depositPrincipal{value: 500 ether}();
+    // State: Active
+    // 1M tokens minted to protocol
+    // 500 ETH locked in contract until maturity
+}
+```
+
+### Step 3: Start Token Sale
+
+```solidity
+function startBondSale() external onlyOwner {
+    IRevenueBondEscrow escrow = IRevenueBondEscrow(escrowAddress);
+
+    // Set price: 0.0005 ETH per token (500 ETH / 1M tokens)
+    escrow.startSale(
+        0.0005 ether,    // price per token
+        treasuryAddress  // receives 2% sale fee
+    );
+}
+```
+
+### Step 4: Investors Buy Tokens
+
+```solidity
+// Frontend: investor buys 10,000 tokens for 5 ETH
+function buyBonds(uint256 amount) external payable {
+    IRevenueBondEscrow(escrowAddress).buyTokens{value: msg.value}(amount);
+    // 2% fee to treasury, 98% to protocol
+    // Tokens transferred from protocol to buyer
+}
+```
+
+### Step 5: Revenue Distribution (Same as Soft Bonds)
+
+```solidity
+// Send revenue to router - works identically to Soft Bonds
+(bool success, ) = routerAddress.call{value: fees}("");
+require(success);
+IRevenueRouter(routerAddress).routeRevenue();
+```
+
+### Step 6: Investors Claim Revenue + Principal
+
+```solidity
+// Claim revenue (anytime during bond lifetime)
+IRevenueBondEscrow(escrowAddress).claimRevenue();
+
+// Claim principal (only after maturity)
+IRevenueBondEscrow(escrowAddress).claimPrincipal();
+// Returns proportional share: (principalAmount * balance) / totalSupply
+```
+
+### Guaranteed Bond Gas Costs
+
+| Operation | Gas Cost | Notes |
+|-----------|----------|-------|
+| Create Escrow Series | ~3.8M | One-time (via deployer pattern) |
+| Deposit Principal | ~100k | One-time, activates series |
+| Start Sale | ~50k | One-time |
+| Buy Tokens | ~120k | Per purchase |
+| Route Revenue | ~120-270k | Depends on series state |
+| Claim Revenue | ~70k | Per holder |
+| Claim Principal | ~60k | Per holder, after maturity |
+
+---
 
 ## Troubleshooting
 

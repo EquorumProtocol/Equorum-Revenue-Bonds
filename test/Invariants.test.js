@@ -1,478 +1,556 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const { deployFullStack, createSeriesViaFactory, DEFAULT_PARAMS } = require("./helpers");
 
-describe("Invariants - Mainnet Grade Tests", function () {
-  let factory, series, router;
-  let owner, treasury, protocol, holder1, holder2;
-  
-  const VALID_CONFIG = {
-    name: "Test Series",
-    symbol: "TEST",
-    revenueShareBPS: 2000, // 20%
-    durationDays: 365,
-    totalSupply: ethers.parseEther("1000000")
-  };
+/**
+ * INVARIANT TESTS
+ * 
+ * These tests verify properties that must ALWAYS hold true regardless of
+ * the sequence of actions. After every action we check:
+ * 
+ * INV-1: series.balance >= sum(calculateClaimable(holder)) for all holders
+ * INV-2: sum(claimed) + sum(claimable) == totalRevenueReceived (within rounding)
+ * INV-3: revenuePerTokenStored only increases (never decreases)
+ * INV-4: After maturity: active == false, no new distributions, claims still work
+ * INV-5: Router: pendingToRoute <= router.balance always
+ * INV-6: Router: totalRoutedToSeries + totalReturnedToProtocol + balance == totalRevenueReceived
+ * INV-7: No holder can claim more than their proportional share
+ */
+describe("Invariant Tests", function () {
+  let owner, treasury, protocol, rest, registry, factory;
+  let alice, bob, charlie, dave;
 
   beforeEach(async function () {
-    [owner, treasury, protocol, holder1, holder2] = await ethers.getSigners();
-    
-    const RevenueSeriesFactory = await ethers.getContractFactory("RevenueSeriesFactory");
-    factory = await RevenueSeriesFactory.deploy(treasury.address);
-    await factory.waitForDeployment();
-    
-    const tx = await factory.connect(protocol).createSeries(
-      VALID_CONFIG.name,
-      VALID_CONFIG.symbol,
-      protocol.address,
-      VALID_CONFIG.revenueShareBPS,
-      VALID_CONFIG.durationDays,
-      VALID_CONFIG.totalSupply
-    );
-    
-    const receipt = await tx.wait();
-    const event = receipt.logs.find(log => {
-      try {
-        const parsed = factory.interface.parseLog(log);
-        return parsed?.name === "SeriesCreated";
-      } catch {
-        return false;
-      }
-    });
-    
-    const parsedEvent = factory.interface.parseLog(event);
-    const seriesAddress = parsedEvent.args[0];
-    const routerAddress = parsedEvent.args[1];
-    
-    series = await ethers.getContractAt("RevenueSeries", seriesAddress);
-    router = await ethers.getContractAt("RevenueRouter", routerAddress);
-    
-    // Distribute tokens to holders
-    await series.connect(protocol).transfer(holder1.address, ethers.parseEther("400000"));
-    await series.connect(protocol).transfer(holder2.address, ethers.parseEther("300000"));
-    // Protocol keeps 300000
+    ({ owner, treasury, protocol, rest, registry, factory } = await deployFullStack());
+    [alice, bob, charlie, dave] = rest;
   });
 
-  describe("1) Money Never Disappears", function () {
-    it("Router: totalReceived >= totalRoutedToSeries + totalReturnedToProtocol", async function () {
-      // Send multiple revenue batches
-      const amounts = [
-        ethers.parseEther("1"),
-        ethers.parseEther("0.5"),
-        ethers.parseEther("2")
-      ];
-      
-      for (const amount of amounts) {
-        await owner.sendTransaction({
-          to: await router.getAddress(),
-          value: amount
-        });
-        await router.routeRevenue();
-      }
-      
-      const status = await router.getRouterStatus();
-      const totalReceived = status[1];
-      const totalToSeries = status[2];
-      const totalToProtocol = status[3];
-      
-      // Invariant: received >= distributed
-      expect(totalReceived).to.be.gte(totalToSeries + totalToProtocol);
-    });
+  // ============================================
+  // HELPER: Check all series invariants
+  // ============================================
+  async function checkSeriesInvariants(series, holders, totalClaimedSoFar) {
+    const seriesAddr = await series.getAddress();
+    const seriesBalance = await ethers.provider.getBalance(seriesAddr);
+    const totalRevenue = await series.totalRevenueReceived();
+    const revenuePerToken = await series.revenuePerTokenStored();
 
-    it("Series: sum(claimed) <= totalRevenueReceived", async function () {
-      // Send revenue
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      await router.routeRevenue();
-      
-      const totalRevenueBefore = await series.totalRevenueReceived();
-      
-      // Track claimable amounts before claiming
-      const claimable1 = await series.calculateClaimable(holder1.address);
-      const claimable2 = await series.calculateClaimable(holder2.address);
-      const claimableProtocol = await series.calculateClaimable(protocol.address);
-      
-      // Holders claim
-      await series.connect(holder1).claimRevenue();
-      await series.connect(holder2).claimRevenue();
-      await series.connect(protocol).claimRevenue();
-      
-      const totalClaimed = claimable1 + claimable2 + claimableProtocol;
-      
-      // Invariant: total claimed <= total received
-      expect(totalClaimed).to.be.lte(totalRevenueBefore);
-    });
+    // INV-1: contract balance >= sum of all claimable
+    let sumClaimable = 0n;
+    for (const h of holders) {
+      const claimable = await series.calculateClaimable(h.address);
+      sumClaimable += claimable;
+    }
+    expect(seriesBalance).to.be.gte(sumClaimable,
+      "INV-1 VIOLATED: series balance < sum(claimable)");
 
-    it("Router balance + distributed == totalReceived", async function () {
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      await router.routeRevenue();
-      
-      const status = await router.getRouterStatus();
-      const currentBalance = status[0];
-      const totalReceived = status[1];
-      const totalToSeries = status[2];
-      const totalToProtocol = status[3];
-      
-      // Invariant: balance + distributed == received
-      expect(currentBalance + totalToSeries + totalToProtocol).to.equal(totalReceived);
-    });
-  });
+    // INV-2: totalClaimed + sumClaimable <= totalRevenue (within rounding tolerance)
+    const totalAccountedFor = totalClaimedSoFar + sumClaimable;
+    const tolerance = BigInt(holders.length) * 2n; // 2 wei per holder rounding tolerance
+    expect(totalAccountedFor).to.be.lte(totalRevenue + tolerance,
+      "INV-2 VIOLATED: claimed + claimable > totalRevenue");
 
-  describe("2) Money Never Gets Stuck", function () {
-    it("Protocol can always withdraw from router", async function () {
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      await router.routeRevenue();
-      
-      const routerBalance = await ethers.provider.getBalance(await router.getAddress());
-      
-      if (routerBalance > 0n) {
-        const protocolBalanceBefore = await ethers.provider.getBalance(protocol.address);
-        
-        const tx = await router.connect(protocol).withdrawAllToProtocol();
-        const receipt = await tx.wait();
-        const gasUsed = receipt.gasUsed * receipt.gasPrice;
-        
-        const protocolBalanceAfter = await ethers.provider.getBalance(protocol.address);
-        
-        // Protocol received the balance
-        expect(protocolBalanceAfter).to.be.gt(protocolBalanceBefore - gasUsed);
-      }
-    });
+    // INV-3 is checked inline (revenuePerToken only increases)
+    return { sumClaimable, revenuePerToken };
+  }
 
-    it("Holders can always claim from series (even if router fails)", async function () {
-      // Send revenue
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      await router.routeRevenue();
-      
-      // Pause router (simulating failure)
-      await router.connect(protocol).transferOwnership(owner.address);
-      await router.pause();
-      
-      // Holders can still claim
-      const claimable = await series.calculateClaimable(holder1.address);
-      expect(claimable).to.be.gt(0);
-      
-      const tx = await series.connect(holder1).claimRevenue();
-      await expect(tx).to.emit(series, "RevenueClaimed");
-    });
+  async function checkRouterInvariants(router) {
+    const routerAddr = await router.getAddress();
+    const routerBalance = await ethers.provider.getBalance(routerAddr);
+    const pending = await router.pendingToRoute();
+    const totalReceived = await router.totalRevenueReceived();
+    const totalToSeries = await router.totalRoutedToSeries();
+    const totalToProtocol = await router.totalReturnedToProtocol();
 
-    it("ETH sent to paused router can be withdrawn", async function () {
-      await router.connect(protocol).transferOwnership(owner.address);
-      await router.pause();
-      
-      // Send ETH while paused
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      
-      const routerBalance = await ethers.provider.getBalance(await router.getAddress());
-      expect(routerBalance).to.equal(ethers.parseEther("1"));
-      
-      // Protocol can withdraw
-      await router.connect(protocol).withdrawAllToProtocol();
-      
-      const routerBalanceAfter = await ethers.provider.getBalance(await router.getAddress());
-      expect(routerBalanceAfter).to.equal(0);
-    });
-  });
+    // INV-5: pendingToRoute <= balance
+    expect(pending).to.be.lte(routerBalance,
+      "INV-5 VIOLATED: pendingToRoute > router balance");
 
-  describe("3) Ownership & Admin Surface", function () {
-    it("Protocol is owner of series after creation", async function () {
-      const seriesOwner = await series.owner();
-      expect(seriesOwner).to.equal(protocol.address);
-    });
+    // INV-6: totalToSeries + totalToProtocol + balance == totalReceived
+    const accounted = totalToSeries + totalToProtocol + routerBalance;
+    expect(accounted).to.equal(totalReceived,
+      "INV-6 VIOLATED: accounting mismatch in router");
+  }
 
-    it("Protocol is owner of router after creation", async function () {
-      const routerOwner = await router.owner();
-      expect(routerOwner).to.equal(protocol.address);
-    });
+  // ============================================
+  // 1) SERIES ACCOUNTING INVARIANTS
+  // ============================================
+  describe("Series Accounting Invariants", function () {
+    it("INV-1: series.balance >= sum(claimable) after distributions and partial claims", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      const holders = [alice, bob, charlie];
 
-    it("Only owner can set fees on Factory", async function () {
-      await expect(
-        factory.connect(protocol).setFees(true, ethers.parseEther("0.01"))
-      ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
-      
-      // Owner can
-      await factory.setFees(true, ethers.parseEther("0.01"));
-    });
+      // Distribute tokens
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("300000"));
+      await series.connect(protocol).transfer(bob.address, ethers.parseEther("200000"));
+      await series.connect(protocol).transfer(charlie.address, ethers.parseEther("100000"));
 
-    it("Only owner can pause Factory", async function () {
-      await expect(
-        factory.connect(protocol).pause()
-      ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
-      
-      // Owner can
-      await factory.pause();
-    });
-
-    it("Only owner can set treasury on Factory", async function () {
-      await expect(
-        factory.connect(protocol).setTreasury(holder1.address)
-      ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
-      
-      // Owner can
-      await factory.setTreasury(holder1.address);
-    });
-  });
-
-  describe("4) Maturity Boundary with Router", function () {
-    // Using existing series from beforeEach (365 days)
-    // We'll use time manipulation to test maturity
-
-    it("Before maturity: router distributes normally", async function () {
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      
-      const tx = await router.routeRevenue();
-      await expect(tx).to.emit(router, "RevenueRouted");
-      
-      const status = await router.getRouterStatus();
-      expect(status[2]).to.be.gt(0); // totalToSeries > 0
-    });
-
-    it("After maturity: router stops routing to series", async function () {
-      // Fast forward time past maturity
-      await ethers.provider.send("evm_increaseTime", [366 * 24 * 60 * 60]); // 366 days
-      await ethers.provider.send("evm_mine");
-      
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      
-      // Router should not route to matured series
-      const tx = await router.routeRevenue();
-      
-      // Check that routing failed gracefully
-      const receipt = await tx.wait();
-      const failEvent = receipt.logs.find(log => {
-        try {
-          const parsed = router.interface.parseLog(log);
-          return parsed?.name === "RouteAttemptFailed";
-        } catch {
-          return false;
-        }
-      });
-      
-      expect(failEvent).to.not.be.undefined;
-    });
-
-    it("After maturity: funds stay in router, protocol can withdraw", async function () {
-      // Fast forward time
-      await ethers.provider.send("evm_increaseTime", [366 * 24 * 60 * 60]);
-      await ethers.provider.send("evm_mine");
-      
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      
-      await router.routeRevenue();
-      
-      const routerBalance = await ethers.provider.getBalance(await router.getAddress());
-      expect(routerBalance).to.be.gt(0);
-      
-      // Protocol can withdraw
-      const protocolBalanceBefore = await ethers.provider.getBalance(protocol.address);
-      const tx = await router.connect(protocol).withdrawAllToProtocol();
-      const receipt = await tx.wait();
-      const gasUsed = receipt.gasUsed * receipt.gasPrice;
-      
-      const protocolBalanceAfter = await ethers.provider.getBalance(protocol.address);
-      expect(protocolBalanceAfter).to.be.gt(protocolBalanceBefore - gasUsed);
-    });
-
-    it("After maturity: holders can still claim existing revenue", async function () {
-      // Send revenue before maturity
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
-      await router.routeRevenue();
-      
-      // Fast forward past maturity
-      await ethers.provider.send("evm_increaseTime", [366 * 24 * 60 * 60]);
-      await ethers.provider.send("evm_mine");
-      
-      // Holders can still claim
-      const claimable = await series.calculateClaimable(holder1.address);
-      expect(claimable).to.be.gt(0);
-      
-      const tx = await series.connect(holder1).claimRevenue();
-      await expect(tx).to.emit(series, "RevenueClaimed");
-    });
-  });
-
-  describe("5) Fuzz-like Tests (Multiple Random Operations)", function () {
-    it("Multiple revenue sends and routes maintain invariants", async function () {
-      const iterations = 10;
-      
-      for (let i = 0; i < iterations; i++) {
-        // Random amount between 0.01 and 1 ETH
-        const amount = ethers.parseEther((Math.random() * 0.99 + 0.01).toFixed(4));
-        
-        await owner.sendTransaction({
-          to: await router.getAddress(),
-          value: amount
-        });
-        
-        await router.routeRevenue();
-        
-        // Check invariant after each iteration
-        const status = await router.getRouterStatus();
-        const currentBalance = status[0];
-        const totalReceived = status[1];
-        const totalToSeries = status[2];
-        const totalToProtocol = status[3];
-        
-        expect(currentBalance + totalToSeries + totalToProtocol).to.equal(totalReceived);
-        expect(totalReceived).to.be.gte(totalToSeries + totalToProtocol);
-      }
-    });
-
-    it("Multiple claims from different holders maintain invariants", async function () {
-      // Send revenue
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("10")
-      });
-      await router.routeRevenue();
-      
-      // Track total claimed manually
       let totalClaimed = 0n;
-      
-      // First round of claims
-      let claimable = await series.calculateClaimable(holder1.address);
-      if (claimable > 0n) {
-        await series.connect(holder1).claimRevenue();
+
+      // Distribution 1
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("10") });
+      await checkSeriesInvariants(series, [...holders, protocol], totalClaimed);
+
+      // Alice claims
+      const aliceClaimable = await series.calculateClaimable(alice.address);
+      await series.connect(alice).claimRevenue();
+      totalClaimed += aliceClaimable;
+      await checkSeriesInvariants(series, [...holders, protocol], totalClaimed);
+
+      // Distribution 2
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("5") });
+      await checkSeriesInvariants(series, [...holders, protocol], totalClaimed);
+
+      // Bob claims
+      const bobClaimable = await series.calculateClaimable(bob.address);
+      await series.connect(bob).claimRevenue();
+      totalClaimed += bobClaimable;
+      await checkSeriesInvariants(series, [...holders, protocol], totalClaimed);
+
+      // Distribution 3
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("20") });
+      await checkSeriesInvariants(series, [...holders, protocol], totalClaimed);
+    });
+
+    it("INV-2: totalClaimed + sumClaimable == totalRevenue after all claims", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      const holders = [alice, bob];
+
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("500000"));
+      await series.connect(protocol).transfer(bob.address, ethers.parseEther("500000"));
+
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("10") });
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("20") });
+
+      let totalClaimed = 0n;
+
+      // Both claim
+      for (const h of holders) {
+        const claimable = await series.calculateClaimable(h.address);
+        await series.connect(h).claimRevenue();
         totalClaimed += claimable;
       }
-      
-      claimable = await series.calculateClaimable(holder2.address);
-      if (claimable > 0n) {
-        await series.connect(holder2).claimRevenue();
-        totalClaimed += claimable;
-      }
-      
-      claimable = await series.calculateClaimable(protocol.address);
-      if (claimable > 0n) {
+
+      // Protocol claims
+      const protocolClaimable = await series.calculateClaimable(protocol.address);
+      if (protocolClaimable > 0n) {
         await series.connect(protocol).claimRevenue();
-        totalClaimed += claimable;
+        totalClaimed += protocolClaimable;
       }
-      
-      // Send more revenue
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("5")
-      });
-      await router.routeRevenue();
-      
-      // Second round of claims
-      claimable = await series.calculateClaimable(holder1.address);
-      if (claimable > 0n) {
-        await series.connect(holder1).claimRevenue();
-        totalClaimed += claimable;
-      }
-      
-      claimable = await series.calculateClaimable(holder2.address);
-      if (claimable > 0n) {
-        await series.connect(holder2).claimRevenue();
-        totalClaimed += claimable;
-      }
-      
-      const totalRevenueNow = await series.totalRevenueReceived();
-      
-      // Invariant: total claimed <= total revenue
-      expect(totalClaimed).to.be.lte(totalRevenueNow);
+
+      // After all claims, sum should equal totalRevenue (within rounding)
+      const totalRevenue = await series.totalRevenueReceived();
+      const diff = totalRevenue > totalClaimed ? totalRevenue - totalClaimed : totalClaimed - totalRevenue;
+      expect(diff).to.be.lte(10n, "INV-2: total claimed diverges from total revenue");
     });
 
-    it("Random senders can send ETH without breaking invariants", async function () {
-      const senders = [owner, holder1, holder2, protocol, treasury];
-      
-      for (let i = 0; i < 5; i++) {
-        const randomSender = senders[Math.floor(Math.random() * senders.length)];
-        const amount = ethers.parseEther((Math.random() * 0.5 + 0.01).toFixed(4));
-        
-        await randomSender.sendTransaction({
-          to: await router.getAddress(),
-          value: amount
-        });
+    it("INV-3: revenuePerTokenStored never decreases", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("500000"));
+
+      let prevRevenuePerToken = 0n;
+
+      for (let i = 0; i < 10; i++) {
+        await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("1") });
+        const current = await series.revenuePerTokenStored();
+        expect(current).to.be.gte(prevRevenuePerToken,
+          `INV-3 VIOLATED at distribution ${i}: revenuePerToken decreased`);
+        prevRevenuePerToken = current;
+
+        // Transfer tokens around (should not affect revenuePerTokenStored)
+        if (i % 2 === 0) {
+          await series.connect(alice).transfer(bob.address, ethers.parseEther("10000"));
+        } else {
+          await series.connect(bob).transfer(alice.address, ethers.parseEther("10000"));
+        }
+
+        const afterTransfer = await series.revenuePerTokenStored();
+        expect(afterTransfer).to.be.gte(prevRevenuePerToken,
+          `INV-3 VIOLATED after transfer at step ${i}`);
       }
-      
-      // Route all accumulated revenue
-      await router.routeRevenue();
-      
-      // Check invariant
-      const status = await router.getRouterStatus();
-      const currentBalance = status[0];
-      const totalReceived = status[1];
-      const totalToSeries = status[2];
-      const totalToProtocol = status[3];
-      
-      expect(currentBalance + totalToSeries + totalToProtocol).to.equal(totalReceived);
     });
 
-    it("Dust amounts (1 wei) don't break accounting", async function () {
-      // Send 1 wei
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: 1n
-      });
-      
-      await router.routeRevenue();
-      
-      const status = await router.getRouterStatus();
-      expect(status[1]).to.equal(1n); // totalReceived == 1 wei
-      
-      // Invariant still holds
-      const currentBalance = status[0];
-      const totalReceived = status[1];
-      const totalToSeries = status[2];
-      const totalToProtocol = status[3];
-      
-      expect(currentBalance + totalToSeries + totalToProtocol).to.equal(totalReceived);
+    it("INV-7: No holder claims more than proportional share", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      const totalSupply = await series.totalSupply();
+
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("100000")); // 10%
+      await series.connect(protocol).transfer(bob.address, ethers.parseEther("200000"));   // 20%
+
+      const revenue = ethers.parseEther("100");
+      await series.connect(protocol).distributeRevenue({ value: revenue });
+
+      // Alice: 10% of 100 = 10 ETH max
+      const aliceClaimable = await series.calculateClaimable(alice.address);
+      const aliceBalance = await series.balanceOf(alice.address);
+      const aliceMaxShare = (revenue * aliceBalance) / totalSupply;
+      expect(aliceClaimable).to.be.lte(aliceMaxShare + 1n,
+        "INV-7: Alice claims more than proportional share");
+
+      // Bob: 20% of 100 = 20 ETH max
+      const bobClaimable = await series.calculateClaimable(bob.address);
+      const bobBalance = await series.balanceOf(bob.address);
+      const bobMaxShare = (revenue * bobBalance) / totalSupply;
+      expect(bobClaimable).to.be.lte(bobMaxShare + 1n,
+        "INV-7: Bob claims more than proportional share");
     });
   });
 
-  describe("6) Series Token Supply Invariants", function () {
-    it("Total supply never changes", async function () {
-      const totalSupplyBefore = await series.totalSupply();
-      
-      // Various operations
-      await owner.sendTransaction({
-        to: await router.getAddress(),
-        value: ethers.parseEther("1")
-      });
+  // ============================================
+  // 2) ROUTER ACCOUNTING INVARIANTS
+  // ============================================
+  describe("Router Accounting Invariants", function () {
+    it("INV-5: pendingToRoute <= router.balance always", async function () {
+      const { router } = await createSeriesViaFactory(factory, protocol);
+
+      // Receive ETH
+      await alice.sendTransaction({ to: await router.getAddress(), value: ethers.parseEther("10") });
+      await checkRouterInvariants(router);
+
+      // Route
       await router.routeRevenue();
-      await series.connect(holder1).claimRevenue();
-      
-      const totalSupplyAfter = await series.totalSupply();
-      
-      expect(totalSupplyAfter).to.equal(totalSupplyBefore);
-      expect(totalSupplyAfter).to.equal(VALID_CONFIG.totalSupply);
+      await checkRouterInvariants(router);
+
+      // Receive more
+      await bob.sendTransaction({ to: await router.getAddress(), value: ethers.parseEther("5") });
+      await checkRouterInvariants(router);
+
+      // Route again
+      await router.routeRevenue();
+      await checkRouterInvariants(router);
     });
 
-    it("Sum of all balances == total supply", async function () {
-      const balance1 = await series.balanceOf(holder1.address);
-      const balance2 = await series.balanceOf(holder2.address);
-      const balanceProtocol = await series.balanceOf(protocol.address);
-      
-      const totalSupply = await series.totalSupply();
-      
-      expect(balance1 + balance2 + balanceProtocol).to.equal(totalSupply);
+    it("INV-6: totalToSeries + totalToProtocol + balance == totalReceived", async function () {
+      const { router } = await createSeriesViaFactory(factory, protocol);
+
+      // Multiple cycles
+      for (let i = 0; i < 5; i++) {
+        await alice.sendTransaction({ to: await router.getAddress(), value: ethers.parseEther("10") });
+        await router.routeRevenue();
+        await checkRouterInvariants(router);
+      }
+
+      // Withdraw protocol share
+      const routerBalance = await ethers.provider.getBalance(await router.getAddress());
+      if (routerBalance > 0n) {
+        await router.connect(protocol).withdrawAllToProtocol();
+        await checkRouterInvariants(router);
+      }
+    });
+
+    it("INV-5+6: invariants hold after failed route attempts", async function () {
+      const { series, router } = await createSeriesViaFactory(factory, protocol);
+
+      // Send ETH
+      await alice.sendTransaction({ to: await router.getAddress(), value: ethers.parseEther("10") });
+      await checkRouterInvariants(router);
+
+      // Mature series to force route failure
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      // Route fails gracefully
+      await router.routeRevenue();
+      await checkRouterInvariants(router);
+
+      // Protocol withdraws after failed route
+      const balance = await ethers.provider.getBalance(await router.getAddress());
+      if (balance > 0n) {
+        await router.connect(protocol).withdrawAllToProtocol();
+        await checkRouterInvariants(router);
+      }
+    });
+  });
+
+  // ============================================
+  // 3) MATURITY INVARIANTS (INV-4)
+  // ============================================
+  describe("Maturity State Freeze Invariants", function () {
+    it("INV-4: After maturity, active == false", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      expect(await series.active()).to.be.true;
+
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      expect(await series.active()).to.be.false;
+    });
+
+    it("INV-4: After maturity, distributeRevenue reverts", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      await expect(
+        series.connect(protocol).distributeRevenue({ value: ethers.parseEther("1") })
+      ).to.be.revertedWith("Series not active");
+    });
+
+    it("INV-4: After maturity, matureSeries cannot be called again", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      await expect(series.matureSeries()).to.be.revertedWith("Already matured");
+    });
+
+    it("INV-4: After maturity, claims still work for pre-maturity revenue", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("500000"));
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("10") });
+
+      const claimableBefore = await series.calculateClaimable(alice.address);
+      expect(claimableBefore).to.be.gt(0);
+
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      // Claimable should be preserved
+      const claimableAfter = await series.calculateClaimable(alice.address);
+      expect(claimableAfter).to.equal(claimableBefore);
+
+      // Claim works
+      await expect(series.connect(alice).claimRevenue()).to.not.be.reverted;
+      expect(await series.calculateClaimable(alice.address)).to.equal(0);
+    });
+
+    it("INV-4: After maturity, transfers still work but don't create new rewards", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("500000"));
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("10") });
+
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      // Transfer works
+      await series.connect(alice).transfer(bob.address, ethers.parseEther("250000"));
+
+      // Bob has no claimable (got tokens after last distribution)
+      expect(await series.calculateClaimable(bob.address)).to.equal(0);
+
+      // Alice still has her pre-transfer claimable
+      expect(await series.calculateClaimable(alice.address)).to.be.gt(0);
+    });
+
+    it("INV-4: After maturity, totalRevenueReceived is frozen", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("10") });
+
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      const revenueFrozen = await series.totalRevenueReceived();
+
+      // Try to distribute (should fail)
+      await expect(
+        series.connect(protocol).distributeRevenue({ value: ethers.parseEther("5") })
+      ).to.be.reverted;
+
+      // Revenue unchanged
+      expect(await series.totalRevenueReceived()).to.equal(revenueFrozen);
+    });
+
+    it("INV-4: After maturity, revenuePerTokenStored is frozen", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("10") });
+
+      await time.increase(DEFAULT_PARAMS.durationDays * 24 * 60 * 60 + 1);
+      await series.matureSeries();
+
+      const rptFrozen = await series.revenuePerTokenStored();
+
+      // Transfers should not change revenuePerTokenStored
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("100000"));
+      expect(await series.revenuePerTokenStored()).to.equal(rptFrozen);
+    });
+  });
+
+  // ============================================
+  // 4) MINI-FUZZ: Random Action Sequences
+  // ============================================
+  describe("Mini-Fuzz: Random Action Sequences", function () {
+    it("Should maintain all invariants across 50 random actions", async function () {
+      const { series, router } = await createSeriesViaFactory(factory, protocol);
+      const holders = [alice, bob, charlie, dave];
+      const allAccounts = [protocol, ...holders];
+
+      // Initial token distribution
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("200000"));
+      await series.connect(protocol).transfer(bob.address, ethers.parseEther("150000"));
+      await series.connect(protocol).transfer(charlie.address, ethers.parseEther("100000"));
+      await series.connect(protocol).transfer(dave.address, ethers.parseEther("50000"));
+      // protocol keeps 500K
+
+      let totalClaimed = 0n;
+      let prevRevenuePerToken = 0n;
+      let actionLog = [];
+
+      // Deterministic pseudo-random using block-based seed
+      function pseudoRandom(seed, max) {
+        // Simple LCG
+        const next = (seed * 1103515245 + 12345) & 0x7fffffff;
+        return { value: next % max, seed: next };
+      }
+
+      let seed = 42;
+
+      for (let i = 0; i < 50; i++) {
+        const { value: actionType, seed: s1 } = pseudoRandom(seed, 5);
+        seed = s1;
+        const { value: holderIdx, seed: s2 } = pseudoRandom(seed, holders.length);
+        seed = s2;
+
+        const holder = holders[holderIdx];
+
+        try {
+          switch (actionType) {
+            case 0: {
+              // DISTRIBUTE REVENUE
+              const { value: amountIdx, seed: s3 } = pseudoRandom(seed, 5);
+              seed = s3;
+              const amounts = ["0.01", "0.1", "1", "5", "10"];
+              const amount = ethers.parseEther(amounts[amountIdx]);
+              await series.connect(protocol).distributeRevenue({ value: amount });
+              actionLog.push(`[${i}] distribute ${amounts[amountIdx]} ETH`);
+              break;
+            }
+            case 1: {
+              // CLAIM REVENUE
+              const claimable = await series.calculateClaimable(holder.address);
+              if (claimable > 0n) {
+                await series.connect(holder).claimRevenue();
+                totalClaimed += claimable;
+                actionLog.push(`[${i}] ${holder.address.slice(0, 8)} claimed ${ethers.formatEther(claimable)} ETH`);
+              }
+              break;
+            }
+            case 2: {
+              // TRANSFER TOKENS
+              const { value: recipientIdx, seed: s3 } = pseudoRandom(seed, holders.length);
+              seed = s3;
+              const recipient = holders[recipientIdx];
+              const balance = await series.balanceOf(holder.address);
+              if (balance > 0n && holder.address !== recipient.address) {
+                const transferAmount = balance / 10n; // Transfer 10%
+                if (transferAmount > 0n) {
+                  await series.connect(holder).transfer(recipient.address, transferAmount);
+                  actionLog.push(`[${i}] transfer ${ethers.formatEther(transferAmount)} tokens ${holder.address.slice(0, 8)} -> ${recipient.address.slice(0, 8)}`);
+                }
+              }
+              break;
+            }
+            case 3: {
+              // CLAIM FOR (relayer pattern)
+              const claimable = await series.calculateClaimable(holder.address);
+              if (claimable > 0n) {
+                const { value: relayerIdx, seed: s3 } = pseudoRandom(seed, holders.length);
+                seed = s3;
+                const relayer = holders[relayerIdx];
+                await series.connect(relayer).claimFor(holder.address);
+                totalClaimed += claimable;
+                actionLog.push(`[${i}] claimFor ${holder.address.slice(0, 8)} by ${relayer.address.slice(0, 8)}`);
+              }
+              break;
+            }
+            case 4: {
+              // SEND TO ROUTER + ROUTE
+              const { value: amountIdx, seed: s3 } = pseudoRandom(seed, 3);
+              seed = s3;
+              const amounts = ["1", "5", "10"];
+              await router.connect(holder).receiveAndRoute({ value: ethers.parseEther(amounts[amountIdx]) });
+              actionLog.push(`[${i}] receiveAndRoute ${amounts[amountIdx]} ETH`);
+              break;
+            }
+          }
+        } catch (e) {
+          // Some actions may legitimately fail (e.g., no claimable, insufficient balance)
+          actionLog.push(`[${i}] action ${actionType} failed: ${e.message.slice(0, 60)}`);
+          continue;
+        }
+
+        // CHECK INVARIANTS AFTER EVERY ACTION
+        const currentRPT = await series.revenuePerTokenStored();
+        expect(currentRPT).to.be.gte(prevRevenuePerToken,
+          `INV-3 VIOLATED at step ${i}: revenuePerToken decreased from ${prevRevenuePerToken} to ${currentRPT}`);
+        prevRevenuePerToken = currentRPT;
+
+        await checkSeriesInvariants(series, allAccounts, totalClaimed);
+        await checkRouterInvariants(router);
+      }
+
+      // Final summary
+      console.log(`      Mini-fuzz completed 50 actions, ${actionLog.length} logged`);
+      console.log(`      Total claimed: ${ethers.formatEther(totalClaimed)} ETH`);
+    });
+
+    it("Should maintain invariants with aggressive transfer-then-claim pattern (30 rounds)", async function () {
+      const { series } = await createSeriesViaFactory(factory, protocol);
+      const holders = [alice, bob, charlie];
+
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("300000"));
+      await series.connect(protocol).transfer(bob.address, ethers.parseEther("300000"));
+      await series.connect(protocol).transfer(charlie.address, ethers.parseEther("300000"));
+
+      let totalClaimed = 0n;
+      let prevRPT = 0n;
+
+      for (let round = 0; round < 30; round++) {
+        // Distribute
+        await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("1") });
+
+        const rpt = await series.revenuePerTokenStored();
+        expect(rpt).to.be.gte(prevRPT);
+        prevRPT = rpt;
+
+        // Rotate: each holder transfers 10% to next
+        const fromIdx = round % 3;
+        const toIdx = (round + 1) % 3;
+        const from = holders[fromIdx];
+        const to = holders[toIdx];
+        const bal = await series.balanceOf(from.address);
+        if (bal > ethers.parseEther("10000")) {
+          await series.connect(from).transfer(to.address, ethers.parseEther("10000"));
+        }
+
+        // One holder claims
+        const claimer = holders[round % 3];
+        const claimable = await series.calculateClaimable(claimer.address);
+        if (claimable > 0n) {
+          await series.connect(claimer).claimRevenue();
+          totalClaimed += claimable;
+        }
+
+        await checkSeriesInvariants(series, [...holders, protocol], totalClaimed);
+      }
+    });
+
+    it("Should maintain invariants with interleaved router + series operations (30 rounds)", async function () {
+      const { series, router } = await createSeriesViaFactory(factory, protocol);
+
+      await series.connect(protocol).transfer(alice.address, ethers.parseEther("500000"));
+
+      let totalClaimed = 0n;
+
+      for (let round = 0; round < 30; round++) {
+        // Alternate: direct distribute vs router
+        if (round % 2 === 0) {
+          await series.connect(protocol).distributeRevenue({ value: ethers.parseEther("1") });
+        } else {
+          await router.connect(alice).receiveAndRoute({ value: ethers.parseEther("5") });
+        }
+
+        // Claim every 3rd round
+        if (round % 3 === 0) {
+          const claimable = await series.calculateClaimable(alice.address);
+          if (claimable > 0n) {
+            await series.connect(alice).claimRevenue();
+            totalClaimed += claimable;
+          }
+        }
+
+        await checkSeriesInvariants(series, [alice, protocol], totalClaimed);
+        await checkRouterInvariants(router);
+      }
     });
   });
 });

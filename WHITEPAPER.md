@@ -3,8 +3,7 @@
 **Version 2.0 - February 2026**
 
 **Network:** Arbitrum One (Mainnet)  
-**Website:** https://equorumprotocol.org  
-**App:** https://app.equorumprotocol.org
+**Website:** https://equorumprotocol.org
 
 ---
 
@@ -517,7 +516,7 @@ Members earn yield from DAO treasury
 
 1. **Choose bond type**: Soft (no principal) or Guaranteed (with escrow)
 2. **Set parameters**: Revenue share (1-50%), duration (30-1825 days), supply
-3. **Create series** via https://app.equorumprotocol.org or directly on-chain
+3. **Create series** via https://equorumprotocol.org or directly on-chain
 4. **Distribute tokens** (Soft) or **deposit principal then sell** (Guaranteed)
 5. **Send revenue** to router address periodically
 
@@ -609,7 +608,6 @@ A: The Safe can pause new series creation. Existing series continue operating.
 ## Links & Resources
 
 **Website:** https://equorumprotocol.org
-**App:** https://app.equorumprotocol.org
 **GitHub:** https://github.com/EquorumProtocol/Equorum-Revenue-Bonds
 **Discord:** https://discord.gg/nYMuD8By
 **Twitter:** [@Equorumprotocol](https://x.com/Equorumprotocol)

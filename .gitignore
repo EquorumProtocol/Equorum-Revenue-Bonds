@@ -41,6 +41,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Error and debug files
+*.err
+*.error
+debug*.html
+temp*.html
+mermaid-filter.*
+
 # Misc
 .cache/
 temp/

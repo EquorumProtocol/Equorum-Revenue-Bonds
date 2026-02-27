@@ -62,3 +62,6 @@ frontend/out/
 secrets/
 .secret
 private/
+
+# Internal strategy and planning docs
+.internal/

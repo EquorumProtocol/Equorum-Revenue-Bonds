@@ -48,6 +48,10 @@ debug*.html
 temp*.html
 mermaid-filter.*
 
+# Accidental command output files
+l.localhost*
+*localhost*home*
+
 # Misc
 .cache/
 temp/

@@ -1,12 +1,33 @@
-# Revenue Bonds Protocol
+<div align="center">
+
+# 🏛️ Equorum Revenue Bonds Protocol
 
 **Non-Dilutive Capital Raising for DeFi Protocols**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.24-blue)](https://soliditylang.org/)
-[![Arbitrum](https://img.shields.io/badge/Arbitrum-One-blue)](https://arbitrum.io/)
+[![Arbitrum](https://img.shields.io/badge/Arbitrum-One-28A0F0)](https://arbitrum.io/)
+[![Tests](https://img.shields.io/badge/Tests-169%20Passing-success)](./test)
+[![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)](./test)
+[![Audit](https://img.shields.io/badge/Audit-Internal%20Complete-orange)](./audits)
+[![Version](https://img.shields.io/badge/Version-2.0-blue)](./CHANGELOG.md)
+
+[Website](https://equorumprotocol.org) • [Documentation](./INTEGRATION_GUIDE.md) • [Whitepaper](./WHITEPAPER.pdf) • [Security](./SECURITY.md) • [Deployments](./DEPLOYMENTS.md)
+
+</div>
 
 > *Tokenize your protocol's revenue. Raise capital without dilution.*
+
+---
+
+## 🎯 Quick Links
+
+- 🚀 **[Try on Testnet](https://sepolia.arbiscan.io/address/0x2B2b7DC0b8276b74dEb57bB30b7AA66697DF7dA8)** - Test on Arbitrum Sepolia
+- 📱 **[Live Demo](https://equorumprotocol.org/demo)** - Interactive demo (coming soon)
+- 📖 **[Integration Guide](./INTEGRATION_GUIDE.md)** - Start building in 5 minutes
+- 🔒 **[Security Docs](./SECURITY.md)** - Security considerations
+- 📍 **[Contract Addresses](./DEPLOYMENTS.md)** - All deployment addresses
+- 💬 **[Discord](https://discord.gg/equorum)** - Join our community
 
 ---
 
@@ -242,17 +263,24 @@ See [audits/](./audits/) for full audit reports.
 
 ---
 
-## Documentation
+## 📚 Documentation
 
-- [Whitepaper](./WHITEPAPER.md) - Full protocol overview
-- [Architecture](./docs/ARCHITECTURE.md) - Technical deep dive
-- [Integration Guide](./docs/INTEGRATION.md) - How to integrate
-- [Security](./docs/SECURITY.md) - Security model and tests
-- [RevenueSeries](./docs/RevenueSeries.md) - Soft Bond contract docs
-- [RevenueRouter](./docs/RevenueRouter.md) - Router contract docs
-- [RevenueSeriesFactory](./docs/RevenueSeriesFactory.md) - Factory contract docs
-- [Migration Guide](./MIGRATION.md) - V1 to V2 migration
-- [Changelog](./CHANGELOG.md) - Version history
+### For Protocols
+- 📖 **[Integration Guide](./INTEGRATION_GUIDE.md)** - Complete integration tutorial with code examples
+- 🔒 **[Security Considerations](./SECURITY.md)** - Security best practices and risk assessment
+- 📍 **[Deployment Addresses](./DEPLOYMENTS.md)** - All contract addresses and ABIs
+- 🏛️ **[Whitepaper](./WHITEPAPER.md)** - Full protocol overview and design decisions
+
+### For Developers
+- 🏗️ **[Architecture](./docs/ARCHITECTURE.md)** - Technical deep dive
+- 📝 **[Contract Docs](./docs/)** - Individual contract documentation
+- 🔄 **[Migration Guide](./MIGRATION.md)** - V1 to V2 migration
+- 📋 **[Changelog](./CHANGELOG.md)** - Version history
+
+### For Investors
+- 💰 **[Investment Guide](./docs/INVESTMENT_GUIDE.md)** - How to invest in revenue bonds (coming soon)
+- 📊 **[Analytics](https://equorumprotocol.org/analytics)** - Live protocol metrics (coming soon)
+- 🎯 **[Risk Assessment](./SECURITY.md#known-risks)** - Understanding the risks
 
 ---
 
@@ -270,22 +298,88 @@ See [audits/](./audits/) for full audit reports.
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
-- [x] **Q1 2026:** V1 deployed to Arbitrum One
-- [x] **Q1 2026:** V2 architecture, audits, and security fixes
-- [x] **Q1 2026:** V2 deployed to Arbitrum One (5 contracts)
-- [ ] **Q2 2026:** External security audit
-- [ ] **Q2 2026:** First real protocol onboarded
-- [ ] **Q3 2026:** Cross-chain expansion
-- [ ] **Q4 2026:** Governance and protocol token
+```mermaid
+gantt
+    title Equorum Revenue Bonds Roadmap
+    dateFormat YYYY-MM
+    section Phase 1: Foundation
+    V1 Deployment (Arbitrum One)           :done, 2026-01, 2026-01
+    V2 Architecture & Internal Audits      :done, 2026-01, 2026-02
+    V2 Mainnet Deployment                  :done, 2026-02, 2026-02
+    section Phase 2: Growth
+    External Security Audit                :active, 2026-04, 2026-06
+    First Protocol Integration             :active, 2026-04, 2026-06
+    Bug Bounty Program Launch              :2026-05, 2026-05
+    section Phase 3: Expansion
+    Cross-chain Deployment (Base, OP)     :2026-07, 2026-09
+    Advanced Bond Types                    :2026-07, 2026-09
+    section Phase 4: Decentralization
+    EQM Token Launch                       :2026-10, 2026-10
+    Governance Activation                  :2026-11, 2026-12
+    DAO Treasury Management                :2026-12, 2026-12
+```
+
+### Current Status: Phase 2 - Growth 🚀
+
+**Completed ✅**
+- V1 & V2 deployed to Arbitrum One mainnet
+- 169 passing tests, 100% coverage
+- Internal security audits complete (22 issues fixed)
+- Reputation system live
+- Guaranteed Bonds with escrow
+
+**In Progress 🔄**
+- External security audit (Q2 2026)
+- First protocol partnerships
+- Community building
+
+**Coming Soon 🔜**
+- Bug bounty program (Immunefi)
+- Cross-chain expansion
+- EQM governance token
 
 ---
 
-## License
+## 🤝 Community & Support
+
+- **Discord:** [Join our Discord](https://discord.gg/equorum) - Developer support, announcements
+- **Twitter:** [@EquorumProtocol](https://twitter.com/EquorumProtocol) - Updates and news
+- **GitHub:** [Issues](https://github.com/EquorumProtocol/Equorum-Revenue-Bonds/issues) - Bug reports and feature requests
+- **Email:** dev@equorumprotocol.org - Technical support
+- **Telegram:** [t.me/equorum](https://t.me/equorum) - Community chat
+
+---
+
+## 🛡️ Security
+
+**Audit Status:**
+- ✅ Internal audits complete (22 issues resolved)
+- ⏳ External audit scheduled Q2 2026
+- 🔜 Bug bounty program launching Q2 2026
+
+**Report vulnerabilities:** security@equorumprotocol.org
+
+See [SECURITY.md](./SECURITY.md) for full security documentation.
+
+---
+
+## 📄 License
 
 MIT License - see [LICENSE](./LICENSE) for details.
 
 ---
 
-**Revenue Bonds Protocol - Tokenize Revenue. Raise Capital. No Dilution.**
+<div align="center">
+
+**🏛️ Equorum Revenue Bonds Protocol**
+
+*Tokenize Revenue. Raise Capital. No Dilution.*
+
+[![Built on Arbitrum](https://img.shields.io/badge/Built%20on-Arbitrum-28A0F0)](https://arbitrum.io/)
+[![Powered by OpenZeppelin](https://img.shields.io/badge/Powered%20by-OpenZeppelin-4E5EE4)](https://openzeppelin.com/)
+
+[Website](https://equorumprotocol.org) • [Docs](./INTEGRATION_GUIDE.md) • [Twitter](https://twitter.com/EquorumProtocol) • [Discord](https://discord.gg/equorum)
+
+</div>

@@ -81,3 +81,6 @@ private/
 out-forge/
 cache-forge/
 broadcast/
+
+# Windows download metadata (invalid filenames on Windows)
+*:Zone.Identifier

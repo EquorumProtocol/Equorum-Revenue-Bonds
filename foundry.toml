@@ -25,3 +25,11 @@ fail_on_revert = false
 
 [lint]
 lint_on_build = false
+
+[rpc_endpoints]
+arbitrum_sepolia = "https://sepolia-rollup.arbitrum.io/rpc"
+arbitrum = "https://arb1.arbitrum.io/rpc"
+
+[etherscan]
+arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", chain = 421614 }
+arbitrum = { key = "${ARBISCAN_API_KEY}", chain = 42161 }

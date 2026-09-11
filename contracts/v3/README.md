@@ -19,10 +19,15 @@ forge build
 forge test            # unit, fuzz, invariant and V2-regression tests
 ```
 
-## Deploy
+## Deploy (Arbitrum Sepolia)
 
 ```bash
-TREASURY=<multisig> BUILDER=<builder address> DRAW_FEE_BPS=200 \
-forge script script/DeployV3.s.sol --rpc-url $ARBITRUM_SEPOLIA_RPC --broadcast
-# then the multisig calls EquorumRegistry.acceptOwnership()
+cast wallet import deployer --interactive          # once: encrypted keystore, key never in a file
+forge script script/DeployV3.s.sol --rpc-url arbitrum_sepolia --account deployer --broadcast --verify
+FACTORY=<TapBondFactory address> \
+forge script script/SmokeV3.s.sol  --rpc-url arbitrum_sepolia --account deployer --broadcast
 ```
+
+`TREASURY`, `BUILDER` and `DRAW_FEE_BPS` are optional env vars (they default to the deployer and 2%).
+`--verify` needs `ARBISCAN_API_KEY` (an Etherscan API key works for Arbitrum).
+When `TREASURY` is a multisig, it must call `EquorumRegistry.acceptOwnership()` after deploy.

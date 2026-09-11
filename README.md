@@ -20,6 +20,12 @@
 
 ---
 
+> [!IMPORTANT]
+> **V3 (Tap Bonds) is in development** on the `v3` branch — see [docs/V3_SPEC.md](./docs/V3_SPEC.md).
+> A review of V2 found several issues, including that the Guaranteed Bond raises zero net capital and that escrow defaults are never recorded in the reputation registry.
+> Each one is reproduced against the real V2 contracts in [`test/foundry/V2Regression.t.sol`](./test/foundry/V2Regression.t.sol).
+> V2 is not audited. Do not create new V2 Guaranteed Bonds.
+
 ## 🎯 Quick Links
 
 - 🚀 **[Try on Testnet](https://sepolia.arbiscan.io/address/0x2B2b7DC0b8276b74dEb57bB30b7AA66697DF7dA8)** - Test on Arbitrum Sepolia

@@ -76,3 +76,11 @@ private/
 
 # Internal strategy and planning docs
 .internal/
+
+# Foundry
+out-forge/
+cache-forge/
+broadcast/
+
+# Windows download metadata (invalid filenames on Windows)
+*:Zone.Identifier

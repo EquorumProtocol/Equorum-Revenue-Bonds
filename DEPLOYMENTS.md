@@ -48,6 +48,34 @@
 
 ## Arbitrum Sepolia (Testnet)
 
+### Core Protocol V3 (Tap Bonds)
+
+Deployed 2026-09-15, chain id 421614. Treasury and builder both point at the
+deployer here; on mainnet they become the multisig and the builder address.
+
+| Contract | Address | Notes |
+|----------|---------|-------|
+| **TapBondFactory** | [`0xFfBDc68D5548C6dA3A04EE2BdE4690827f3736b5`](https://sepolia.arbiscan.io/address/0xFfBDc68D5548C6dA3A04EE2BdE4690827f3736b5) | draw fee 200 bps |
+| **EquorumRegistry** | [`0x4338Fa9b8AD073106f951a2697CaEB0f55253D40`](https://sepolia.arbiscan.io/address/0x4338Fa9b8AD073106f951a2697CaEB0f55253D40) | append-only; factory authorised |
+| **FeeSplitter** | [`0xa6160C5Efdac6861229e7E8C88726D9B902ee499`](https://sepolia.arbiscan.io/address/0xa6160C5Efdac6861229e7E8C88726D9B902ee499) | 80/20, split is a constant |
+
+### V3 Smoke Test (first end-to-end run on a live chain)
+
+`script/SmokeV3.s.sol`, nine transactions, 0.000989 ETH of gas. Sale, early
+close, tap draw with the fee, one coupon, revenue routed, claim — all settled
+on chain and read back from the contracts afterwards.
+
+| Contract | Address | Details |
+|----------|---------|---------|
+| **TapBond** | [`0xa17fBC13B7dE1AA9DCc911cc303628Cc6f36C3A2`](https://sepolia.arbiscan.io/address/0xa17fBC13B7dE1AA9DCc911cc303628Cc6f36C3A2) | EQ-SMOKE, raised 0.001 ETH, Active, 1 coupon covered |
+| **TapRouter** | [`0x516F8051170B165223f723A708914301b3306468`](https://sepolia.arbiscan.io/address/0x516F8051170B165223f723A708914301b3306468) | 20% revenue share |
+
+Read back from chain after the run: bond `state` 1 (Active), `raised`
+1e15 wei, `collateral` 1e14 wei, `epochsCovered` 1, bond holding 8.5e14 wei
+(undrawn raise + collateral), router drained to 0, splitter owed 4e12 to the
+treasury and 1e12 to the builder — the 80/20 split, to the wei. The registry
+recorded the bond permanently: issuer, factory, 1e15 raised, 1.3e14 paid.
+
 ### Core Protocol V2
 
 | Contract | Address | Verified |

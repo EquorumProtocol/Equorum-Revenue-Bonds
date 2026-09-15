@@ -8,23 +8,32 @@ import "../contracts/v3/TapBondFactory.sol";
 import "../contracts/v3/FeeSplitter.sol";
 
 /**
- * End-to-end smoke test on a live network, using tiny amounts (~0.011 ETH, mostly returned).
- * The deployer plays issuer AND buyer, so no second wallet is needed.
+ * End-to-end smoke test on a live network. The deployer plays issuer AND buyer, so no
+ * second wallet is needed. Sized for a thin testnet wallet: about 0.0013 ETH leaves the
+ * wallet, most of it claimed straight back, the rest escrowed until the term ends.
  *
  *   FACTORY=0x... forge script script/SmokeV3.s.sol --rpc-url arbitrum_sepolia --account deployer --broadcast
  *
- * Flow: create bond (0.001 ETH collateral) -> buy 1000 tokens (0.01 ETH) -> issuer closes sale early
+ * Flow: create bond (COLLATERAL) -> buy the whole sale (TOKENS x PRICE) -> issuer closes early
  *       -> draw 25% initial release (2% fee to FeeSplitter) -> pay one coupon -> route revenue -> claim.
  * Default / maturity need real days to pass (epochs are >= 1 day) and are covered by `forge test`.
  */
 contract SmokeV3 is Script {
+    // Everything this run spends, in one place. Scale the numbers together to test with
+    // more value; the flow only depends on the ratios between them.
+    uint256 constant TOKENS = 1_000e18;         // the whole sale, bought by the deployer
+    uint256 constant PRICE = 0.000001 ether;    // per token -> raise of 0.001 ETH
+    uint256 constant COLLATERAL = 0.0001 ether; // locked until maturity or default
+    uint256 constant REVENUE = 0.0001 ether;    // extra revenue pushed through the router
+
     function run() external {
         TapBondFactory factory = TapBondFactory(vm.envAddress("FACTORY"));
+        uint256 raise = TOKENS * PRICE / 1e18;
 
         TapBond.Terms memory t;
-        t.price = 0.00001 ether; // per token
-        t.maxSupply = 1_000e18; // max raise 0.01 ETH
-        t.minRaise = 0.005 ether;
+        t.price = PRICE;
+        t.maxSupply = TOKENS;
+        t.minRaise = raise / 2;
         t.saleDuration = 1 days;
         t.epochDuration = 1 days;
         t.gracePeriod = 1 days;
@@ -37,16 +46,16 @@ contract SmokeV3 is Script {
         vm.startBroadcast();
         (, address me,) = vm.readCallers();
 
-        (address b, address r) = factory.createBond{value: 0.001 ether}("Equorum Smoke Test", "EQ-SMOKE", t);
+        (address b, address r) = factory.createBond{value: COLLATERAL}("Equorum Smoke Test", "EQ-SMOKE", t);
         TapBond bond = TapBond(payable(b));
         TapRouter router = TapRouter(payable(r));
 
-        bond.buy{value: 0.01 ether}(1_000e18);
+        bond.buy{value: raise}(TOKENS);
         bond.finalize(); // sold out
         uint256 net = bond.drawCapital(me);
 
-        bond.distribute{value: bond.couponAmount()}(); // one coupon (0.0011 ETH)
-        (bool ok,) = address(router).call{value: 0.001 ether}("");
+        bond.distribute{value: bond.couponAmount()}(); // one coupon
+        (bool ok,) = address(router).call{value: REVENUE}("");
         require(ok, "router send failed");
         router.route(); // 20% to holders, 80% booked for issuer
         router.withdrawIssuer();
